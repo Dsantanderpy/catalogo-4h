@@ -387,13 +387,17 @@ const db = getFirestore(app);
 const DOC = doc(db,"catalogo","datos");
 
 const PASS="4H2024";
-let autos=[],entregas=[],isAdmin=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0;
+const WHATSAPP_NUMERO = "595986147136";
+let autos=[],entregas=[],isAdmin=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false;
 
 async function cargar(){
-  try{const s=await getDoc(DOC);if(s.exists()){const d=s.data();autos=d.autos||[];entregas=d.entregas||[];}}catch(e){}
+  try{const s=await getDoc(DOC);if(s.exists()){const d=s.data();autos=d.autos||[];entregas=d.entregas||[];}cargaOk=true;}catch(e){console.error(e);alert('No se pudo cargar el catálogo. Los guardados quedan bloqueados para proteger los datos. Revisá tu conexión e intentá recargar la página.');}
   render();
 }
-async function guardar(){try{await setDoc(DOC,{autos,entregas});}catch(e){console.error(e);}}
+async function guardar(){
+  if(!cargaOk){alert('No se puede guardar porque el catálogo no se cargó correctamente. Recargá la página e intentá nuevamente.');return false;}
+  try{await setDoc(DOC,{autos,entregas});return true;}catch(e){console.error(e);alert('No se pudo guardar el cambio en Firestore. Revisá tu conexión e intentá nuevamente.');return false;}
+}
 
 function goSec(id,btn){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
@@ -433,6 +437,7 @@ function renderDestacados(){
         <div class="dest-anio">${a.anio||'—'}${a.km?' · 🛣 '+a.km+' km':''}</div>
         ${a.condicion?`<div style="font-size:11px;color:var(--apagado);margin-bottom:4px">${a.condicion}</div>`:''}
         <div class="dest-precio">${formatPrecio(a.precio)}</div>
+        <div class="btns" style="margin-top:14px"><button class="bwa" onclick="event.stopPropagation();consultarWA('${a.id}')">💬 Consultar por WhatsApp</button></div>
       </div>
     </div>`).join('');
 }
@@ -465,6 +470,7 @@ function cardHTML(a){
       ${prev.length?`<div class="cval">${prev.map(p=>`<div class="vi"><span class="vc">✓</span><span>${p.trim().replace(/^•\s*/,'')}</span></div>`).join('')}${mas?'<div class="vmore">+ más detalles...</div>':''}</div>`:''}
       <div class="cprecio">${formatPrecio(a.precio)}</div>
       <div class="chint">Tocar para ver ficha →</div>
+      <div class="btns" style="margin-top:14px"><button class="bwa" onclick="event.stopPropagation();consultarWA('${a.id}')">💬 Consultar por WhatsApp</button></div>
       ${isAdmin?`<div class="cadmin" onclick="event.stopPropagation()">
         <button class="bedit" onclick="abrirForm('${a.id}')">✏ Editar</button>
         <button class="bdel" onclick="eliminarAuto('${a.id}')">✕</button>
@@ -623,18 +629,19 @@ function abrirForm(id){
   document.getElementById('ov-form').classList.add('on');
 }
 
-function guardarAuto(){
+async function guardarAuto(){
   const marca=document.getElementById('fm-marca').value.trim();
   const modelo=document.getElementById('fm-modelo').value.trim();
   if(!marca||!modelo){showToast('⚠ Marca y modelo obligatorios');return;}
-  const vantaActual=editId?autos.find(x=>x.id===editId)?.venta||null:null;
+  const autoActual=editId?autos.find(x=>x.id===editId):null;
+  const vantaActual=autoActual?.venta||null;
   const data={
     id:editId||Date.now().toString(),marca,modelo,
     anio:document.getElementById('fm-anio').value.trim(),
     km:document.getElementById('fm-km').value.trim(),
     precio:document.getElementById('fm-precio').value.trim(),
     condicion:document.getElementById('fm-cond').value,
-    estado:document.getElementById('fm-estado').value,
+    estado:autoActual?.estado==='vendido'?'vendido':document.getElementById('fm-estado').value,
     destacado:document.getElementById('fm-destacado').value,
     trac:document.getElementById('fm-trac').value,
     trans:document.getElementById('fm-trans').value,
@@ -645,12 +652,14 @@ function guardarAuto(){
     fotos:document.getElementById('fm-fotos').value.trim(),
     venta:vantaActual,
   };
+  const autosAnteriores=autos;
   autos=editId?autos.map(a=>a.id===editId?data:a):[data,...autos];
-  guardar();cerrar('ov-form');render();
+  if(!await guardar()){autos=autosAnteriores;return;}
+  cerrar('ov-form');render();
   showToast(editId?'✓ Actualizado':'✓ Vehículo agregado');
 }
 
-function eliminarAuto(id){if(!confirm('¿Eliminar?'))return;autos=autos.filter(a=>a.id!==id);guardar();render();showToast('Eliminado');}
+async function eliminarAuto(id){if(!confirm('¿Eliminar?'))return;const autosAnteriores=autos;autos=autos.filter(a=>a.id!==id);if(!await guardar()){autos=autosAnteriores;return;}render();showToast('Eliminado');}
 
 function verFicha(id){
   const a=autos.find(x=>x.id===id);if(!a)return;
@@ -719,25 +728,29 @@ function verFicha(id){
   document.getElementById('ov-ficha').classList.add('on');
 }
 
-function toggleVendido(id,checked){
+async function toggleVendido(id,checked){
   const a=autos.find(x=>x.id===id);if(!a)return;
+  const estadoAnterior=a.estado,ventaAnterior=a.venta?{...a.venta}:a.venta;
   a.estado=checked?'vendido':'disponible';
   if(!a.venta)a.venta={};
   if(checked&&!a.venta.fecha)a.venta.fecha=new Date().toISOString().split('T')[0];
   const c=document.getElementById('vcampos');
   if(c){c.style.opacity=checked?'1':'0.4';c.style.pointerEvents=checked?'auto':'none';}
-  guardar();render();
+  if(!await guardar()){a.estado=estadoAnterior;a.venta=ventaAnterior;render();return;}
+  render();
   showToast(checked?'✓ Marcado como vendido':'↩ Venta revertida');
 }
 
-function guardarDatosVenta(id){
+async function guardarDatosVenta(id){
   const a=autos.find(x=>x.id===id);if(!a)return;
+  const ventaAnterior=a.venta?{...a.venta}:a.venta;
   if(!a.venta)a.venta={};
   const f=document.getElementById('vb-fecha');
   const v=document.getElementById('vb-vendedor');
   if(f)a.venta.fecha=f.value;
   if(v)a.venta.vendedor=v.value;
-  guardar();showToast('✓ Datos de venta guardados');
+  if(!await guardar()){a.venta=ventaAnterior;return;}
+  showToast('✓ Datos de venta guardados');
 }
 
 function abrirFormEntrega(id){
@@ -749,16 +762,18 @@ function abrirFormEntrega(id){
   document.getElementById('ov-form-entrega').classList.add('on');
 }
 
-function guardarEntrega(){
+async function guardarEntrega(){
   const modelo=document.getElementById('fe-modelo').value.trim();
   if(!modelo){showToast('⚠ Ingresá el modelo');return;}
   const data={id:editEntregaId||Date.now().toString(),modelo,texto:document.getElementById('fe-texto').value.trim(),foto:document.getElementById('fe-foto').value.trim()};
+  const entregasAnteriores=entregas;
   entregas=editEntregaId?entregas.map(e=>e.id===editEntregaId?data:e):[data,...entregas];
-  guardar();cerrar('ov-form-entrega');render();
+  if(!await guardar()){entregas=entregasAnteriores;return;}
+  cerrar('ov-form-entrega');render();
   showToast('✓ Entrega guardada');
 }
 
-function eliminarEntrega(id){if(!confirm('¿Eliminar?'))return;entregas=entregas.filter(e=>e.id!==id);guardar();render();showToast('Eliminado');}
+async function eliminarEntrega(id){if(!confirm('¿Eliminar?'))return;const entregasAnteriores=entregas;entregas=entregas.filter(e=>e.id!==id);if(!await guardar()){entregas=entregasAnteriores;return;}render();showToast('Eliminado');}
 
 function verEntrega(id){
   const v=entregas.find(x=>x.id===id);if(!v)return;
@@ -787,6 +802,13 @@ function copiarWA(id){
   navigator.clipboard.writeText(txt).catch(()=>{const t=document.createElement('textarea');t.value=txt;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();});
   showToast('✓ Texto copiado para WhatsApp');
 }
+function consultarWA(id){
+  const a=autos.find(x=>x.id===id);if(!a||a.estado==='vendido')return;
+  const anio=a.anio?' '+a.anio:'';
+  const precio=a.precio?`\nPrecio publicado: ${formatPrecio(a.precio)}.`:'';
+  const txt=`Hola, ¿qué tal?\n\nMe interesa el ${a.marca} ${a.modelo}${anio}.${precio}\n\n¿Sigue disponible?`;
+  window.open('https://wa.me/'+WHATSAPP_NUMERO+'?text='+encodeURIComponent(txt),'_blank');
+}
 
 function cerrar(id){document.getElementById(id).classList.remove('on');}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2600);}
@@ -798,7 +820,7 @@ window.abrirForm=abrirForm;window.guardarAuto=guardarAuto;window.eliminarAuto=el
 window.verFicha=verFicha;window.toggleVendido=toggleVendido;window.guardarDatosVenta=guardarDatosVenta;
 window.abrirFormEntrega=abrirFormEntrega;window.guardarEntrega=guardarEntrega;window.eliminarEntrega=eliminarEntrega;window.verEntrega=verEntrega;
 window.cerrar=cerrar;window.cambiarFoto=cambiarFoto;window.verFotoFull=verFotoFull;window.navegarFoto=navegarFoto;
-window.copiarWA=copiarWA;window.filtrar=filtrar;window.limpiarFil=limpiarFil;window.renderVentas=renderVentas;window.limpiarVF=limpiarVF;window.renderDestacados=renderDestacados;
+window.copiarWA=copiarWA;window.consultarWA=consultarWA;window.filtrar=filtrar;window.limpiarFil=limpiarFil;window.renderVentas=renderVentas;window.limpiarVF=limpiarVF;window.renderDestacados=renderDestacados;
 
 showToast('Cargando catálogo...');
 cargar();
