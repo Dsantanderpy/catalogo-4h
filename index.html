@@ -675,6 +675,7 @@ function verFicha(id){
     :`<div class="gal-vacio">Sin foto</div>`;
   const valH=pts.length?`<div class="fic-val"><div class="fic-vl">¿Por qué este auto?</div>${pts.map(p=>`<div class="fic-vi"><span style="color:var(--verde);flex-shrink:0">✓</span><span>${p.trim().replace(/^•\s*/,'')}</span></div>`).join('')}</div>`:'';
   const copyBtn=pts.length?`<button class="bwa" onclick="copiarWA('${id}')">📋 Copiar texto para WhatsApp</button>`:'';
+  const consultarBtn=a.estado!=='vendido'?`<button class="bwa" onclick="event.stopPropagation();consultarWA('${id}')">💬 Consultar por WhatsApp</button>`:'';
   const estadoColor=a.estado==='vendido'?'var(--verde)':a.estado==='senado'?'var(--dorado)':'var(--rojo)';
   const estadoLabel=a.estado==='vendido'?'VENDIDO':a.estado==='senado'?'SEÑADO':a.condicion;
 
@@ -723,7 +724,7 @@ function verFicha(id){
     </div>
     ${valH}
     ${ventaBox}
-    <div class="btns" style="margin-top:14px">${copyBtn}<button class="bout" onclick="cerrar('ov-ficha')">Cerrar</button></div>
+    <div class="btns" style="margin-top:14px">${consultarBtn}${copyBtn}<button class="bout" onclick="cerrar('ov-ficha')">Cerrar</button></div>
   `;
   document.getElementById('ov-ficha').classList.add('on');
 }
