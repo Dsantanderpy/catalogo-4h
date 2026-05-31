@@ -306,9 +306,11 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
   <div class="modal">
     <button class="mc" onclick="cerrar('ov-login')">✕</button>
     <div class="mt">ACCESO ADMIN</div>
-    <div class="fl">Contraseña</div>
+    <div class="fl">Email</div>
+    <input type="email" class="fi" id="inp-email" placeholder="admin@ejemplo.com">
+    <div class="fl" style="margin-top:10px">Contraseña</div>
     <input type="password" class="fi" id="inp-pass" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doLogin()">
-    <div class="perr" id="perr">Contraseña incorrecta</div>
+    <div class="perr" id="perr">No se pudo iniciar sesión</div>
     <div class="ff"><button class="bout" onclick="cerrar('ov-login')">Cancelar</button><button class="brojo" onclick="doLogin()">Entrar</button></div>
   </div>
 </div>
@@ -389,6 +391,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
 import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 
 const app = initializeApp({
   apiKey:"AIzaSyC0R5CsHnZhW-pEGBysqIOkUK5eI9U70QU",
@@ -399,9 +402,9 @@ const app = initializeApp({
   appId:"1:847686950864:web:5059af582c4e8a9b0a23d5"
 });
 const db = getFirestore(app);
+const auth = getAuth(app);
 const DOC = doc(db,"catalogo","datos");
 
-const PASS="4H2024";
 const WHATSAPP_NUMERO = "595986147136";
 let autos=[],entregas=[],isAdmin=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false;
 
@@ -605,21 +608,31 @@ function limpiarVF(){
   renderVentas();
 }
 
-function abrirLogin(){document.getElementById('inp-pass').value='';document.getElementById('perr').classList.remove('on');document.getElementById('ov-login').classList.add('on');}
-function doLogin(){
-  if(document.getElementById('inp-pass').value===PASS){
-    isAdmin=true;cerrar('ov-login');
-    const b=document.getElementById('nb-adm');
-    b.textContent='Salir';b.className='nb adm-out';b.onclick=salirAdmin;
-    render();showToast('✓ Modo admin activado');
-  }else{document.getElementById('perr').classList.add('on');}
+function abrirLogin(){document.getElementById('inp-email').value='';document.getElementById('inp-pass').value='';document.getElementById('perr').classList.remove('on');document.getElementById('ov-login').classList.add('on');}
+async function doLogin(){
+  const email=document.getElementById('inp-email').value.trim();
+  const pass=document.getElementById('inp-pass').value;
+  const e=document.getElementById('perr');
+  e.classList.remove('on');
+  try{await signInWithEmailAndPassword(auth,email,pass);cerrar('ov-login');showToast('✓ Modo admin activado');}
+  catch(err){console.error(err);e.textContent='No se pudo iniciar sesión';e.classList.add('on');}
 }
-function salirAdmin(){
-  isAdmin=false;
+async function salirAdmin(){
+  try{await signOut(auth);showToast('Sesión cerrada');}
+  catch(err){console.error(err);alert('No se pudo cerrar la sesión. Intentá nuevamente.');}
+}
+function actualizarSesionAdmin(user){
+  // G1.4 aplicará roles: por ahora cualquier usuario autenticado habilita Admin.
+  isAdmin=!!user;
   const b=document.getElementById('nb-adm');
-  b.textContent='Admin';b.className='nb adm';b.onclick=abrirLogin;
+  b.textContent=isAdmin?'Salir':'Admin';b.className=isAdmin?'nb adm-out':'nb adm';b.onclick=isAdmin?salirAdmin:abrirLogin;
+  if(!isAdmin){
+    ['ov-form','ov-form-entrega','ov-ficha'].forEach(cerrar);
+    if(document.getElementById('sec-ventas').classList.contains('on'))goSec('inicio',document.querySelector('.nav-links .nb'));
+  }
   render();
 }
+onAuthStateChanged(auth,actualizarSesionAdmin);
 
 function abrirForm(id){
   const a=id?autos.find(x=>x.id===id):null;
