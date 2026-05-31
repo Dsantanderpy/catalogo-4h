@@ -406,18 +406,20 @@ const auth = getAuth(app);
 const DOC = doc(db,"catalogo","datos");
 
 const WHATSAPP_NUMERO = "595986147136";
-let autos=[],entregas=[],isAdmin=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false;
+let autos=[],entregas=[],isAdmin=false,currentUser=null,currentRole=null,isSuperAdmin=false,isOwner=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false;
 
 async function cargar(){
   try{const s=await getDoc(DOC);if(s.exists()){const d=s.data();autos=d.autos||[];entregas=d.entregas||[];}cargaOk=true;}catch(e){console.error(e);alert('No se pudo cargar el catálogo. Los guardados quedan bloqueados para proteger los datos. Revisá tu conexión e intentá recargar la página.');}
   render();
 }
 async function guardar(){
+  if(!requireSuperAdmin())return false;
   if(!cargaOk){alert('No se puede guardar porque el catálogo no se cargó correctamente. Recargá la página e intentá nuevamente.');return false;}
   try{await setDoc(DOC,{autos,entregas});return true;}catch(e){console.error(e);alert('No se pudo guardar el cambio en Firestore. Revisá tu conexión e intentá nuevamente.');return false;}
 }
 
 function goSec(id,btn){
+  if(id==='ventas'&&!isSuperAdmin){alert('Acceso restringido.');return;}
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.nb:not(#nb-adm)').forEach(b=>b.classList.remove('on'));
   document.getElementById('sec-'+id).classList.add('on');
@@ -614,18 +616,30 @@ async function doLogin(){
   const pass=document.getElementById('inp-pass').value;
   const e=document.getElementById('perr');
   e.classList.remove('on');
-  try{await signInWithEmailAndPassword(auth,email,pass);cerrar('ov-login');showToast('✓ Modo admin activado');}
+  try{await signInWithEmailAndPassword(auth,email,pass);cerrar('ov-login');showToast('✓ Sesión iniciada');}
   catch(err){console.error(err);e.textContent='No se pudo iniciar sesión';e.classList.add('on');}
 }
 async function salirAdmin(){
   try{await signOut(auth);showToast('Sesión cerrada');}
   catch(err){console.error(err);alert('No se pudo cerrar la sesión. Intentá nuevamente.');}
 }
-function actualizarSesionAdmin(user){
-  // G1.4 aplicará roles: por ahora cualquier usuario autenticado habilita Admin.
-  isAdmin=!!user;
+function requireSuperAdmin(){
+  if(!isSuperAdmin){alert('Acceso restringido.');return false;}
+  return true;
+}
+async function actualizarSesionAdmin(user){
+  currentUser=user||null;currentRole=null;isSuperAdmin=false;isOwner=false;
+  if(user){
+    try{
+      const token=await user.getIdTokenResult();
+      currentRole=token.claims.role||null;
+      isSuperAdmin=currentRole==='super_admin';
+      isOwner=currentRole==='owner';
+    }catch(err){console.error(err);}
+  }
+  isAdmin=isSuperAdmin;
   const b=document.getElementById('nb-adm');
-  b.textContent=isAdmin?'Salir':'Admin';b.className=isAdmin?'nb adm-out':'nb adm';b.onclick=isAdmin?salirAdmin:abrirLogin;
+  b.textContent=currentUser?'Salir':'Admin';b.className=currentUser?'nb adm-out':'nb adm';b.onclick=currentUser?salirAdmin:abrirLogin;
   if(!isAdmin){
     ['ov-form','ov-form-entrega','ov-ficha'].forEach(cerrar);
     if(document.getElementById('sec-ventas').classList.contains('on'))goSec('inicio',document.querySelector('.nav-links .nb'));
@@ -635,6 +649,7 @@ function actualizarSesionAdmin(user){
 onAuthStateChanged(auth,actualizarSesionAdmin);
 
 function abrirForm(id){
+  if(!requireSuperAdmin())return;
   const a=id?autos.find(x=>x.id===id):null;
   editId=a?a.id:null;
   document.getElementById('fm-title').textContent=a?'EDITAR VEHÍCULO':'AGREGAR VEHÍCULO';
@@ -658,6 +673,7 @@ function abrirForm(id){
 }
 
 async function guardarAuto(){
+  if(!requireSuperAdmin())return;
   const marca=document.getElementById('fm-marca').value.trim();
   const modelo=document.getElementById('fm-modelo').value.trim();
   if(!marca||!modelo){showToast('⚠ Marca y modelo obligatorios');return;}
@@ -688,7 +704,7 @@ async function guardarAuto(){
   showToast(editId?'✓ Actualizado':'✓ Vehículo agregado');
 }
 
-async function eliminarAuto(id){if(!confirm('¿Eliminar?'))return;const autosAnteriores=autos;autos=autos.filter(a=>a.id!==id);if(!await guardar()){autos=autosAnteriores;return;}render();showToast('Eliminado');}
+async function eliminarAuto(id){if(!requireSuperAdmin())return;if(!confirm('¿Eliminar?'))return;const autosAnteriores=autos;autos=autos.filter(a=>a.id!==id);if(!await guardar()){autos=autosAnteriores;return;}render();showToast('Eliminado');}
 
 function verFicha(id){
   const a=autos.find(x=>x.id===id);if(!a)return;
@@ -758,6 +774,7 @@ function verFicha(id){
 }
 
 async function toggleVendido(id,checked){
+  if(!requireSuperAdmin())return;
   const a=autos.find(x=>x.id===id);if(!a)return;
   const estadoAnterior=a.estado,ventaAnterior=a.venta?{...a.venta}:a.venta;
   a.estado=checked?'vendido':'disponible';
@@ -771,6 +788,7 @@ async function toggleVendido(id,checked){
 }
 
 async function guardarDatosVenta(id){
+  if(!requireSuperAdmin())return;
   const a=autos.find(x=>x.id===id);if(!a)return;
   const ventaAnterior=a.venta?{...a.venta}:a.venta;
   if(!a.venta)a.venta={};
@@ -783,6 +801,7 @@ async function guardarDatosVenta(id){
 }
 
 function abrirFormEntrega(id){
+  if(!requireSuperAdmin())return;
   const v=id?entregas.find(x=>x.id===id):null;
   editEntregaId=v?v.id:null;
   document.getElementById('fe-modelo').value=v?.modelo||'';
@@ -792,6 +811,7 @@ function abrirFormEntrega(id){
 }
 
 async function guardarEntrega(){
+  if(!requireSuperAdmin())return;
   const modelo=document.getElementById('fe-modelo').value.trim();
   if(!modelo){showToast('⚠ Ingresá el modelo');return;}
   const data={id:editEntregaId||Date.now().toString(),modelo,texto:document.getElementById('fe-texto').value.trim(),foto:document.getElementById('fe-foto').value.trim()};
@@ -802,7 +822,7 @@ async function guardarEntrega(){
   showToast('✓ Entrega guardada');
 }
 
-async function eliminarEntrega(id){if(!confirm('¿Eliminar?'))return;const entregasAnteriores=entregas;entregas=entregas.filter(e=>e.id!==id);if(!await guardar()){entregas=entregasAnteriores;return;}render();showToast('Eliminado');}
+async function eliminarEntrega(id){if(!requireSuperAdmin())return;if(!confirm('¿Eliminar?'))return;const entregasAnteriores=entregas;entregas=entregas.filter(e=>e.id!==id);if(!await guardar()){entregas=entregasAnteriores;return;}render();showToast('Eliminado');}
 
 function verEntrega(id){
   const v=entregas.find(x=>x.id===id);if(!v)return;
