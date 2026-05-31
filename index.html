@@ -343,6 +343,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div><div class="fl">Estado</div><select class="fi" id="fm-estado"><option value="disponible">Disponible</option><option value="senado">Señado</option></select></div>
           <div><div class="fl">⭐ Destacar</div><select class="fi" id="fm-destacado"><option value="">No destacar</option><option value="⚡ Mejor precio">⚡ Mejor precio</option><option value="🏆 Alta gama">🏆 Alta gama</option><option value="🔥 Poco km">🔥 Poco km</option><option value="✨ Como nuevo">✨ Como nuevo</option><option value="🎯 Oportunidad">🎯 Oportunidad</option></select></div>
+          <div><div class="fl">Sucursal</div><select class="fi" id="fm-sucursal"><option value="central">Central</option><option value="sucursal">Sucursal</option></select></div>
         </div>
       </div>
       <div class="fg-section full">
@@ -463,6 +464,7 @@ function formatPrecio(v){
   return'₲ '+n.toLocaleString('es-PY');
 }
 function parseFotos(a){return(a.fotos||'').split('\n').map(l=>l.trim()).filter(l=>l.startsWith('http'));}
+function getSucursal(a){return a?.sucursal==='sucursal'?'sucursal':'central';}
 
 function cardHTML(a){
   const pts=(a.validacion||'').split('\n').filter(l=>l.trim());
@@ -633,6 +635,7 @@ function abrirForm(id){
   document.getElementById('fm-cond').value=a?.condicion||'Seminuevo';
   document.getElementById('fm-estado').value=a?.estado==='vendido'?'disponible':(a?.estado||'disponible');
   document.getElementById('fm-destacado').value=a?.destacado||'';
+  document.getElementById('fm-sucursal').value=a?getSucursal(a):'central';
   document.getElementById('fm-trac').value=a?.trac||'';
   document.getElementById('fm-trans').value=a?.trans||'';
   document.getElementById('fm-origen').value=a?.origen||'';
@@ -657,6 +660,7 @@ async function guardarAuto(){
     condicion:document.getElementById('fm-cond').value,
     estado:autoActual?.estado==='vendido'?'vendido':document.getElementById('fm-estado').value,
     destacado:document.getElementById('fm-destacado').value,
+    sucursal:getSucursal({sucursal:document.getElementById('fm-sucursal').value}),
     trac:document.getElementById('fm-trac').value,
     trans:document.getElementById('fm-trans').value,
     origen:document.getElementById('fm-origen').value,
