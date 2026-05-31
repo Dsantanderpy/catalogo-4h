@@ -452,7 +452,6 @@ function renderDestacados(){
         <div class="dest-anio">${a.anio||'—'}${a.km?' · 🛣 '+a.km+' km':''}</div>
         ${a.condicion?`<div style="font-size:11px;color:var(--apagado);margin-bottom:4px">${a.condicion}</div>`:''}
         <div class="dest-precio">${formatPrecio(a.precio)}</div>
-        <div class="btns" style="margin-top:14px"><button class="bwa" onclick="event.stopPropagation();consultarWA('${a.id}')">💬 Consultar por WhatsApp</button></div>
       </div>
     </div>`).join('');
 }
@@ -486,7 +485,6 @@ function cardHTML(a){
       ${prev.length?`<div class="cval">${prev.map(p=>`<div class="vi"><span class="vc">✓</span><span>${p.trim().replace(/^•\s*/,'')}</span></div>`).join('')}${mas?'<div class="vmore">+ más detalles...</div>':''}</div>`:''}
       <div class="cprecio">${formatPrecio(a.precio)}</div>
       <div class="chint">Tocar para ver ficha →</div>
-      <div class="btns" style="margin-top:14px"><button class="bwa" onclick="event.stopPropagation();consultarWA('${a.id}')">💬 Consultar por WhatsApp</button></div>
       ${isAdmin?`<div class="cadmin" onclick="event.stopPropagation()">
         <button class="bedit" onclick="abrirForm('${a.id}')">✏ Editar</button>
         <button class="bdel" onclick="eliminarAuto('${a.id}')">✕</button>
@@ -693,7 +691,6 @@ function verFicha(id){
     :`<div class="gal-vacio">Sin foto</div>`;
   const valH=pts.length?`<div class="fic-val"><div class="fic-vl">¿Por qué este auto?</div>${pts.map(p=>`<div class="fic-vi"><span style="color:var(--verde);flex-shrink:0">✓</span><span>${p.trim().replace(/^•\s*/,'')}</span></div>`).join('')}</div>`:'';
   const copyBtn=pts.length?`<button class="bwa" onclick="copiarWA('${id}')">📋 Copiar texto para WhatsApp</button>`:'';
-  const consultarBtn=a.estado!=='vendido'?`<button class="bwa" onclick="event.stopPropagation();consultarWA('${id}')">💬 Consultar por WhatsApp</button>`:'';
   const estadoColor=a.estado==='vendido'?'var(--verde)':a.estado==='senado'?'var(--dorado)':'var(--rojo)';
   const estadoLabel=a.estado==='vendido'?'VENDIDO':a.estado==='senado'?'SEÑADO':a.condicion;
 
@@ -742,7 +739,7 @@ function verFicha(id){
     </div>
     ${valH}
     ${ventaBox}
-    <div class="btns" style="margin-top:14px">${consultarBtn}${copyBtn}<button class="bout" onclick="cerrar('ov-ficha')">Cerrar</button></div>
+    <div class="btns" style="margin-top:14px">${copyBtn}<button class="bout" onclick="cerrar('ov-ficha')">Cerrar</button></div>
   `;
   document.getElementById('ov-ficha').classList.add('on');
 }
