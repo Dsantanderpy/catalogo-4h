@@ -329,6 +329,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
           <div><div class="fl">KM recorridos</div><input class="fi" id="fm-km" placeholder="45.000"></div>
           <div><div class="fl">Precio</div><input class="fi" id="fm-precio" placeholder="250000000"><div class="fhint">Sin puntos ni comas. Ej: 52000000</div></div>
           <div><div class="fl">Condición</div><select class="fi" id="fm-cond"><option>Nuevo</option><option selected>Seminuevo</option><option>Usado</option><option>Importado</option></select></div>
+          <div><div class="fl">Fecha de ingreso a stock</div><input class="fi" id="fm-fecha-ingreso" type="date"></div>
         </div>
       </div>
       <div class="fg-section full">
@@ -469,6 +470,7 @@ function formatPrecio(v){
 }
 function parseFotos(a){return(a.fotos||'').split('\n').map(l=>l.trim()).filter(l=>l.startsWith('http'));}
 function getSucursal(a){return a?.sucursal==='sucursal'?'sucursal':'central';}
+function fechaHoy(){const d=new Date();return[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');}
 
 function cardHTML(a){
   const pts=(a.validacion||'').split('\n').filter(l=>l.trim());
@@ -658,6 +660,7 @@ function abrirForm(id){
   document.getElementById('fm-anio').value=a?.anio||'';
   document.getElementById('fm-km').value=a?.km||'';
   document.getElementById('fm-precio').value=a?.precio||'';
+  document.getElementById('fm-fecha-ingreso').value=a?(a.fechaIngreso||''):fechaHoy();
   document.getElementById('fm-cond').value=a?.condicion||'Seminuevo';
   document.getElementById('fm-estado').value=a?.estado==='vendido'?'disponible':(a?.estado||'disponible');
   document.getElementById('fm-destacado').value=a?.destacado||'';
@@ -684,6 +687,7 @@ async function guardarAuto(){
     anio:document.getElementById('fm-anio').value.trim(),
     km:document.getElementById('fm-km').value.trim(),
     precio:document.getElementById('fm-precio').value.trim(),
+    fechaIngreso:document.getElementById('fm-fecha-ingreso').value,
     condicion:document.getElementById('fm-cond').value,
     estado:autoActual?.estado==='vendido'?'vendido':document.getElementById('fm-estado').value,
     destacado:document.getElementById('fm-destacado').value,
