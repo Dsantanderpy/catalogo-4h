@@ -379,6 +379,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
           <div><div class="fl">Precio</div><input class="fi" id="fm-precio" placeholder="250000000"><div class="fhint">Sin puntos ni comas. Ej: 52000000</div></div>
           <div><div class="fl">Condición</div><select class="fi" id="fm-cond"><option>Nuevo</option><option selected>Seminuevo</option><option>Usado</option><option>Importado</option></select></div>
           <div><div class="fl">Fecha de ingreso a stock</div><input class="fi" id="fm-fecha-ingreso" type="date"></div>
+          <div><div class="fl">Comisión de venta</div><input class="fi" id="fm-comision-venta" placeholder="0"><div class="fhint">Dato interno. Sin puntos ni comas.</div></div>
         </div>
       </div>
       <div class="fg-section full">
@@ -523,29 +524,29 @@ function formatPrecio(v){
 function parseFotos(a){return(a.fotos||'').split('\n').map(l=>l.trim()).filter(l=>l.startsWith('http'));}
 function getSucursal(a){return a?.sucursal==='sucursal'?'sucursal':'central';}
 function fechaHoy(){const d=new Date();return[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');}
-function crearRegistroFinanciero(a,fechaIngreso,usarFechaActual=false){
+function crearRegistroFinanciero(a,fechaIngreso,comisionVenta=0,usarFechaActual=false){
   return{
     autoId:a.id,estadoFinanciero:a.estado==='vendido'?'vendido':'en_stock',sucursal:getSucursal(a),origenStock:'playa4h',fechaIngreso:fechaIngreso||(usarFechaActual?fechaHoy():null),
     vehiculo:{marca:a.marca,modelo:a.modelo,anio:a.anio,combustible:a.combustible||''},
     compra:{fechaCompra:null,precioCompra:0,origenCompra:'',proveedor:'',responsableCompra:'',observacionCompra:''},
-    comisiones:{comisionCompra:0,comisionVenta:0,responsableComision:'',observacionComision:''},
+    comisiones:{comisionCompra:0,comisionVenta,responsableComision:'',observacionComision:''},
     venta:{precioPublicado:Number(a.precio)||0,precioVentaFinal:null,fechaVenta:null,responsableVenta:'',formaVenta:'',motivoDescuento:null,observacionVenta:''},
     resumen:{totalGastos:0,costoTotal:0,margenBruto:null,margenPorcentaje:null},
     auditoria:{creadoEn:serverTimestamp(),creadoPor:currentUser.uid,actualizadoEn:serverTimestamp(),actualizadoPor:currentUser.uid}
   };
 }
-async function guardarAltaConFinanzas(a,fechaIngreso){
+async function guardarAltaConFinanzas(a,fechaIngreso,comisionVenta){
   if(!requireSuperAdmin())return false;
   if(!cargaOk){alert('No se puede guardar porque el catálogo no se cargó correctamente. Recargá la página e intentá nuevamente.');return false;}
   try{
     const batch=writeBatch(db);
     batch.set(DOC,{autos,entregas});
-    batch.set(doc(db,'finanzasVehiculos',a.id),crearRegistroFinanciero(a,fechaIngreso,true));
+    batch.set(doc(db,'finanzasVehiculos',a.id),crearRegistroFinanciero(a,fechaIngreso,comisionVenta,true));
     await batch.commit();
     return true;
   }catch(e){console.error(e);alert('No se pudo guardar el vehículo y su registro financiero. Revisá tu conexión e intentá nuevamente.');return false;}
 }
-async function guardarEdicionConFinanzas(a,fechaIngreso){
+async function guardarEdicionConFinanzas(a,fechaIngreso,comisionVenta){
   if(!requireSuperAdmin())return false;
   if(!cargaOk){alert('No se puede guardar porque el catálogo no se cargó correctamente. Recargá la página e intentá nuevamente.');return false;}
   try{
@@ -553,8 +554,8 @@ async function guardarEdicionConFinanzas(a,fechaIngreso){
     const finanzas=await getDoc(finanzasRef);
     const batch=writeBatch(db);
     batch.set(DOC,{autos,entregas});
-    if(finanzas.exists())batch.update(finanzasRef,{fechaIngreso:fechaIngreso||null,sucursal:getSucursal(a),'venta.precioPublicado':Number(a.precio)||0,'vehiculo.marca':a.marca,'vehiculo.modelo':a.modelo,'vehiculo.anio':a.anio,'vehiculo.combustible':a.combustible||'','auditoria.actualizadoEn':serverTimestamp(),'auditoria.actualizadoPor':currentUser.uid});
-    else batch.set(finanzasRef,crearRegistroFinanciero(a,fechaIngreso));
+    if(finanzas.exists())batch.update(finanzasRef,{fechaIngreso:fechaIngreso||null,sucursal:getSucursal(a),'comisiones.comisionVenta':comisionVenta,'venta.precioPublicado':Number(a.precio)||0,'vehiculo.marca':a.marca,'vehiculo.modelo':a.modelo,'vehiculo.anio':a.anio,'vehiculo.combustible':a.combustible||'','auditoria.actualizadoEn':serverTimestamp(),'auditoria.actualizadoPor':currentUser.uid});
+    else batch.set(finanzasRef,crearRegistroFinanciero(a,fechaIngreso,comisionVenta));
     await batch.commit();
     return true;
   }catch(e){console.error(e);alert('No se pudo guardar el vehículo y sincronizar sus datos privados. Revisá tu conexión e intentá nuevamente.');return false;}
@@ -1127,7 +1128,8 @@ async function abrirForm(id){
   if(!requireSuperAdmin())return;
   const a=id?autos.find(x=>x.id===id):null;
   let fechaIngreso=a?.fechaIngreso||'';
-  if(a)try{const finanzas=await getDoc(doc(db,'finanzasVehiculos',a.id));if(finanzas.exists())fechaIngreso=finanzas.data().fechaIngreso||fechaIngreso;}catch(e){console.error(e);}
+  let comisionVenta=0;
+  if(a)try{const finanzas=await getDoc(doc(db,'finanzasVehiculos',a.id));if(finanzas.exists()){const datos=finanzas.data();fechaIngreso=datos.fechaIngreso||fechaIngreso;comisionVenta=Number(datos.comisiones?.comisionVenta)||0;}}catch(e){console.error(e);}
   editId=a?a.id:null;
   document.getElementById('fm-title').textContent=a?'EDITAR VEHÍCULO':'AGREGAR VEHÍCULO';
   document.getElementById('fm-marca').value=a?.marca||'';
@@ -1136,6 +1138,7 @@ async function abrirForm(id){
   document.getElementById('fm-km').value=a?.km||'';
   document.getElementById('fm-precio').value=a?.precio||'';
   document.getElementById('fm-fecha-ingreso').value=a?fechaIngreso:fechaHoy();
+  document.getElementById('fm-comision-venta').value=a?comisionVenta:'';
   document.getElementById('fm-cond').value=a?.condicion||'Seminuevo';
   document.getElementById('fm-estado').value=a?.estado==='vendido'?'disponible':(a?.estado||'disponible');
   document.getElementById('fm-destacado').value=a?.destacado||'';
@@ -1158,6 +1161,7 @@ async function guardarAuto(){
   const autoActual=editId?autos.find(x=>x.id===editId):null;
   const vantaActual=autoActual?.venta||null;
   const fechaIngreso=document.getElementById('fm-fecha-ingreso').value;
+  const comisionVenta=enteroNoNegativo(document.getElementById('fm-comision-venta').value,'La comisión de venta');if(comisionVenta===null)return;
   const data={
     id:editId||Date.now().toString(),marca,modelo,
     anio:document.getElementById('fm-anio').value.trim(),
@@ -1178,7 +1182,7 @@ async function guardarAuto(){
   };
   const autosAnteriores=autos;
   autos=editId?autos.map(a=>a.id===editId?data:a):[data,...autos];
-  if(!await(editId?guardarEdicionConFinanzas(data,fechaIngreso):guardarAltaConFinanzas(data,fechaIngreso))){autos=autosAnteriores;return;}
+  if(!await(editId?guardarEdicionConFinanzas(data,fechaIngreso,comisionVenta):guardarAltaConFinanzas(data,fechaIngreso,comisionVenta))){autos=autosAnteriores;return;}
   cerrar('ov-form');render();
   showToast(editId?'✓ Actualizado':'✓ Vehículo agregado');
 }
