@@ -40,6 +40,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .nb.adm{color:var(--apagado);}
 .nb.adm-out{color:#e03b3b;background:rgba(224,59,59,0.1);}
 .nb-admin-only{display:none;}
+.nb-finanzas-only{display:none;}
 .sec{display:none;}.sec.on{display:block;}
 .hero{background:var(--rojo);padding:4rem 1.5rem;text-align:center;position:relative;overflow:hidden;}
 .hero::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(0,0,0,0.04) 0px,rgba(0,0,0,0.04) 1px,transparent 1px,transparent 14px);}
@@ -115,6 +116,19 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .venta-label{font-size:10px;color:var(--apagado);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;}
 .venta-val{font-weight:600;color:var(--blanco);font-size:13px;}
 .venta-val.fecha{color:var(--dorado);}
+.fin-card{background:var(--gris);border:1px solid var(--borde);border-radius:8px;padding:14px;margin-bottom:10px;cursor:pointer;transition:border-color 0.15s,background 0.15s;}
+.fin-card:hover{border-color:#555;background:#1a1a1a;}
+.fin-row{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;}
+.fin-name{font-family:'Barlow Condensed',sans-serif;font-size:1.25rem;font-weight:700;letter-spacing:1px;}
+.fin-meta{font-size:11px;color:var(--apagado);margin-top:4px;}
+.fin-badge{font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;border-radius:20px;background:#252525;color:#bbb;border:1px solid #444;}
+.fin-badge.vendido{background:rgba(49,160,89,0.14);color:var(--verde);border-color:rgba(49,160,89,0.35);}
+.fin-block{background:var(--gris2);border:1px solid var(--borde);border-radius:8px;padding:12px;margin-top:10px;}
+.fin-block-title{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:#6688cc;font-weight:700;margin-bottom:8px;}
+.fin-field{display:grid;grid-template-columns:minmax(120px,0.8fr) 1.2fr;gap:10px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;}
+.fin-field:last-child{border-bottom:none;}
+.fin-field-label{color:var(--apagado);}
+.fin-field-value{color:var(--blanco);overflow-wrap:anywhere;}
 .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:200;align-items:center;justify-content:center;padding:1rem;overflow-y:auto;}
 .ov.on{display:flex;}
 .modal{background:var(--gris);border:1px solid var(--borde);border-radius:12px;width:100%;max-width:500px;max-height:88vh;overflow-y:auto;padding:1.75rem;margin:auto;position:relative;}
@@ -215,6 +229,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
     <button class="nb" id="nb-disp" onclick="goSec('catalogo',this)">Disponibles (0)</button>
     <button class="nb" id="nb-vend" onclick="goSec('vendidos',this)">Vendidos (0)</button>
     <button class="nb nb-admin-only" id="nb-ventas" onclick="goSec('ventas',this)">📊 Ventas</button>
+    <button class="nb nb-finanzas-only" id="nb-finanzas" onclick="goSec('finanzas',this)">Finanzas</button>
     <button class="nb adm" id="nb-adm" onclick="abrirLogin()">Admin</button>
   </div>
 </div>
@@ -302,6 +317,20 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
   </div>
 </div>
 
+<div id="sec-finanzas" class="sec">
+  <div class="wrap">
+    <div class="sec-header"><div><div class="sec-sup">Área privada</div><div class="sec-title">Finanzas por vehículo</div></div></div>
+    <div class="filters">
+      <div><div class="f-label">Buscar vehículo</div><input class="fi-f" id="ff-buscar" placeholder="Marca, modelo o ID" oninput="renderFinanzas()"></div>
+      <div><div class="f-label">Estado financiero</div><select class="fi-f" id="ff-estado" onchange="renderFinanzas()"><option value="">Todos</option><option value="en_stock">En stock</option><option value="vendido">Vendido</option><option value="archivado">Archivado</option></select></div>
+      <div><div class="f-label">Sucursal</div><select class="fi-f" id="ff-sucursal" onchange="renderFinanzas()"><option value="">Todas</option><option value="central">Central</option><option value="sucursal">Sucursal</option></select></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn-clear" onclick="limpiarFiltrosFinanzas()">Limpiar</button></div>
+    </div>
+    <div id="g-finanzas"></div>
+    <div class="empty" id="e-finanzas">Sin registros financieros disponibles</div>
+  </div>
+</div>
+
 <div class="ov" id="ov-login">
   <div class="modal">
     <button class="mc" onclick="cerrar('ov-login')">✕</button>
@@ -312,6 +341,15 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
     <input type="password" class="fi" id="inp-pass" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doLogin()">
     <div class="perr" id="perr">No se pudo iniciar sesión</div>
     <div class="ff"><button class="bout" onclick="cerrar('ov-login')">Cancelar</button><button class="brojo" onclick="doLogin()">Entrar</button></div>
+  </div>
+</div>
+
+<div class="ov" id="ov-finanzas">
+  <div class="modal wide">
+    <button class="mc" onclick="cerrar('ov-finanzas')">✕</button>
+    <div class="mt">FICHA FINANCIERA</div>
+    <div id="finanzas-c"></div>
+    <div class="ff"><button class="bout" onclick="cerrar('ov-finanzas')">Cerrar</button></div>
   </div>
 </div>
 
@@ -391,7 +429,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 
 const app = initializeApp({
@@ -407,7 +445,7 @@ const auth = getAuth(app);
 const DOC = doc(db,"catalogo","datos");
 
 const WHATSAPP_NUMERO = "595986147136";
-let autos=[],entregas=[],isAdmin=false,currentUser=null,currentRole=null,isSuperAdmin=false,isOwner=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false;
+let autos=[],entregas=[],finanzas=[],isAdmin=false,currentUser=null,currentRole=null,isSuperAdmin=false,isOwner=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false;
 
 async function cargar(){
   try{const s=await getDoc(DOC);if(s.exists()){const d=s.data();autos=d.autos||[];entregas=d.entregas||[];}cargaOk=true;}catch(e){console.error(e);alert('No se pudo cargar el catálogo. Los guardados quedan bloqueados para proteger los datos. Revisá tu conexión e intentá recargar la página.');}
@@ -421,12 +459,14 @@ async function guardar(){
 
 function goSec(id,btn){
   if(id==='ventas'&&!isSuperAdmin){alert('Acceso restringido.');return;}
+  if(id==='finanzas'&&!puedeVerFinanzas()){alert('Acceso restringido.');return;}
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.nb:not(#nb-adm)').forEach(b=>b.classList.remove('on'));
   document.getElementById('sec-'+id).classList.add('on');
   if(btn)btn.classList.add('on');
   window.scrollTo(0,0);
   if(id==='ventas')renderVentas();
+  if(id==='finanzas')cargarFinanzas();
 }
 
 function render(){
@@ -438,6 +478,7 @@ function render(){
   document.getElementById('nb-vend').textContent='Vendidos ('+entregas.length+')';
   ['ba-d','ba-v'].forEach(id=>document.getElementById(id).style.display=isAdmin?'inline-block':'none');
   document.querySelectorAll('.nb-admin-only').forEach(el=>el.style.display=isAdmin?'inline-block':'none');
+  document.querySelectorAll('.nb-finanzas-only').forEach(el=>el.style.display=puedeVerFinanzas()?'inline-block':'none');
   filtrar();renderEntregas();renderHome();renderDestacados();
 }
 
@@ -471,10 +512,10 @@ function formatPrecio(v){
 function parseFotos(a){return(a.fotos||'').split('\n').map(l=>l.trim()).filter(l=>l.startsWith('http'));}
 function getSucursal(a){return a?.sucursal==='sucursal'?'sucursal':'central';}
 function fechaHoy(){const d=new Date();return[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');}
-function crearRegistroFinanciero(a){
+function crearRegistroFinanciero(a,fechaIngreso,usarFechaActual=false){
   return{
-    autoId:a.id,estadoFinanciero:'en_stock',sucursal:getSucursal(a),origenStock:'playa4h',fechaIngreso:a.fechaIngreso||'',
-    vehiculo:{marca:a.marca,modelo:a.modelo,anio:a.anio,combustible:''},
+    autoId:a.id,estadoFinanciero:a.estado==='vendido'?'vendido':'en_stock',sucursal:getSucursal(a),origenStock:'playa4h',fechaIngreso:fechaIngreso||(usarFechaActual?fechaHoy():null),
+    vehiculo:{marca:a.marca,modelo:a.modelo,anio:a.anio,combustible:a.combustible||''},
     compra:{fechaCompra:null,precioCompra:0,origenCompra:'',proveedor:'',responsableCompra:'',observacionCompra:''},
     comisiones:{comisionCompra:0,comisionVenta:0,responsableComision:'',observacionComision:''},
     venta:{precioPublicado:Number(a.precio)||0,precioVentaFinal:null,fechaVenta:null,responsableVenta:'',formaVenta:'',motivoDescuento:null,observacionVenta:''},
@@ -482,16 +523,44 @@ function crearRegistroFinanciero(a){
     auditoria:{creadoEn:serverTimestamp(),creadoPor:currentUser.uid,actualizadoEn:serverTimestamp(),actualizadoPor:currentUser.uid}
   };
 }
-async function guardarAltaConFinanzas(a){
+async function guardarAltaConFinanzas(a,fechaIngreso){
   if(!requireSuperAdmin())return false;
   if(!cargaOk){alert('No se puede guardar porque el catálogo no se cargó correctamente. Recargá la página e intentá nuevamente.');return false;}
   try{
     const batch=writeBatch(db);
     batch.set(DOC,{autos,entregas});
-    batch.set(doc(db,'finanzasVehiculos',a.id),crearRegistroFinanciero(a));
+    batch.set(doc(db,'finanzasVehiculos',a.id),crearRegistroFinanciero(a,fechaIngreso,true));
     await batch.commit();
     return true;
   }catch(e){console.error(e);alert('No se pudo guardar el vehículo y su registro financiero. Revisá tu conexión e intentá nuevamente.');return false;}
+}
+async function guardarEdicionConFinanzas(a,fechaIngreso){
+  if(!requireSuperAdmin())return false;
+  if(!cargaOk){alert('No se puede guardar porque el catálogo no se cargó correctamente. Recargá la página e intentá nuevamente.');return false;}
+  try{
+    const finanzasRef=doc(db,'finanzasVehiculos',a.id);
+    const finanzas=await getDoc(finanzasRef);
+    const batch=writeBatch(db);
+    batch.set(DOC,{autos,entregas});
+    if(finanzas.exists())batch.update(finanzasRef,{fechaIngreso:fechaIngreso||null,sucursal:getSucursal(a),'venta.precioPublicado':Number(a.precio)||0,'vehiculo.marca':a.marca,'vehiculo.modelo':a.modelo,'vehiculo.anio':a.anio,'vehiculo.combustible':a.combustible||'','auditoria.actualizadoEn':serverTimestamp(),'auditoria.actualizadoPor':currentUser.uid});
+    else batch.set(finanzasRef,crearRegistroFinanciero(a,fechaIngreso));
+    await batch.commit();
+    return true;
+  }catch(e){console.error(e);alert('No se pudo guardar el vehículo y sincronizar sus datos privados. Revisá tu conexión e intentá nuevamente.');return false;}
+}
+async function guardarEstadoFinanciero(a){
+  if(!requireSuperAdmin())return false;
+  if(!cargaOk){alert('No se puede guardar porque el catálogo no se cargó correctamente. Recargá la página e intentá nuevamente.');return false;}
+  try{
+    const finanzasRef=doc(db,'finanzasVehiculos',a.id);
+    const finanzas=await getDoc(finanzasRef);
+    if(!finanzas.exists()){alert('Falta el registro financiero de este vehículo. Ejecutá la reparación de históricos antes de cambiar su estado.');return false;}
+    const batch=writeBatch(db);
+    batch.set(DOC,{autos,entregas});
+    batch.update(finanzasRef,{estadoFinanciero:a.estado==='vendido'?'vendido':'en_stock','auditoria.actualizadoEn':serverTimestamp(),'auditoria.actualizadoPor':currentUser.uid});
+    await batch.commit();
+    return true;
+  }catch(e){console.error(e);alert('No se pudo guardar el estado del vehículo y sincronizar sus finanzas. Revisá tu conexión e intentá nuevamente.');return false;}
 }
 
 function cardHTML(a){
@@ -634,6 +703,90 @@ function limpiarVF(){
   renderVentas();
 }
 
+function puedeVerFinanzas(){return isSuperAdmin||isOwner;}
+function valorFinanciero(v){
+  if(v===null||v===undefined||v==='')return'—';
+  if(typeof v==='object'&&typeof v.toDate==='function')return v.toDate().toLocaleString('es-PY');
+  return String(v);
+}
+function agregarCampoFinanciero(contenedor,etiqueta,valor){
+  const fila=document.createElement('div');fila.className='fin-field';
+  const label=document.createElement('div');label.className='fin-field-label';label.textContent=etiqueta;
+  const value=document.createElement('div');value.className='fin-field-value';value.textContent=valorFinanciero(valor);
+  fila.append(label,value);contenedor.appendChild(fila);
+}
+function agregarBloqueFinanciero(contenedor,titulo,campos){
+  const bloque=document.createElement('div');bloque.className='fin-block';
+  const encabezado=document.createElement('div');encabezado.className='fin-block-title';encabezado.textContent=titulo;
+  bloque.appendChild(encabezado);
+  campos.forEach(([etiqueta,valor])=>agregarCampoFinanciero(bloque,etiqueta,valor));
+  contenedor.appendChild(bloque);
+}
+async function cargarFinanzas(){
+  if(!puedeVerFinanzas())return;
+  const e=document.getElementById('e-finanzas');
+  e.style.display='block';e.textContent='Cargando registros financieros...';
+  try{
+    const snapshot=await getDocs(collection(db,'finanzasVehiculos'));
+    finanzas=snapshot.docs.map(s=>({id:s.id,...s.data()}));
+    renderFinanzas();
+  }catch(error){
+    console.error(error);finanzas=[];
+    e.style.display='block';e.textContent='No se pudieron cargar los registros financieros.';
+  }
+}
+function renderFinanzas(){
+  if(!puedeVerFinanzas())return;
+  const buscar=document.getElementById('ff-buscar').value.trim().toLowerCase();
+  const estado=document.getElementById('ff-estado').value;
+  const sucursal=document.getElementById('ff-sucursal').value;
+  const lista=finanzas.filter(f=>{
+    const vehiculo=f.vehiculo||{};
+    const texto=[f.id,vehiculo.marca,vehiculo.modelo,vehiculo.anio].join(' ').toLowerCase();
+    return(!buscar||texto.includes(buscar))&&(!estado||f.estadoFinanciero===estado)&&(!sucursal||f.sucursal===sucursal);
+  });
+  const g=document.getElementById('g-finanzas');g.textContent='';
+  const e=document.getElementById('e-finanzas');e.style.display=lista.length?'none':'block';e.textContent='Sin registros financieros disponibles';
+  lista.forEach(f=>{
+    const vehiculo=f.vehiculo||{};
+    const card=document.createElement('div');card.className='fin-card';card.addEventListener('click',()=>verFinanzas(f.id));
+    const row=document.createElement('div');row.className='fin-row';
+    const info=document.createElement('div');
+    const nombre=document.createElement('div');nombre.className='fin-name';nombre.textContent=[vehiculo.marca,vehiculo.modelo,vehiculo.anio].filter(Boolean).join(' ')||f.id;
+    const meta=document.createElement('div');meta.className='fin-meta';meta.textContent=`ID: ${f.id} · Sucursal: ${valorFinanciero(f.sucursal)} · Ingreso: ${valorFinanciero(f.fechaIngreso)}`;
+    const badge=document.createElement('div');badge.className='fin-badge'+(f.estadoFinanciero==='vendido'?' vendido':'');badge.textContent=valorFinanciero(f.estadoFinanciero);
+    info.append(nombre,meta);row.append(info,badge);card.appendChild(row);g.appendChild(card);
+  });
+}
+function limpiarFiltrosFinanzas(){
+  ['ff-buscar','ff-estado','ff-sucursal'].forEach(id=>document.getElementById(id).value='');
+  renderFinanzas();
+}
+function verFinanzas(id){
+  if(!puedeVerFinanzas()){alert('Acceso restringido.');return;}
+  const f=finanzas.find(item=>item.id===id);if(!f)return;
+  const c=document.getElementById('finanzas-c');c.textContent='';
+  agregarBloqueFinanciero(c,'General',[
+    ['Auto ID',f.autoId||f.id],['Estado financiero',f.estadoFinanciero],['Sucursal',f.sucursal],['Origen stock',f.origenStock],['Fecha de ingreso',f.fechaIngreso]
+  ]);
+  agregarBloqueFinanciero(c,'Vehículo',[
+    ['Marca',f.vehiculo?.marca],['Modelo',f.vehiculo?.modelo],['Año',f.vehiculo?.anio],['Combustible',f.vehiculo?.combustible]
+  ]);
+  agregarBloqueFinanciero(c,'Compra',[
+    ['Fecha de compra',f.compra?.fechaCompra],['Precio de compra',formatPrecio(f.compra?.precioCompra)],['Origen',f.compra?.origenCompra],['Proveedor',f.compra?.proveedor],['Responsable',f.compra?.responsableCompra],['Observación',f.compra?.observacionCompra]
+  ]);
+  agregarBloqueFinanciero(c,'Comisiones',[
+    ['Compra',formatPrecio(f.comisiones?.comisionCompra)],['Venta',formatPrecio(f.comisiones?.comisionVenta)],['Responsable',f.comisiones?.responsableComision],['Observación',f.comisiones?.observacionComision]
+  ]);
+  agregarBloqueFinanciero(c,'Venta',[
+    ['Precio publicado',formatPrecio(f.venta?.precioPublicado)],['Precio final',formatPrecio(f.venta?.precioVentaFinal)],['Fecha',f.venta?.fechaVenta],['Responsable',f.venta?.responsableVenta],['Forma',f.venta?.formaVenta],['Motivo descuento',f.venta?.motivoDescuento],['Observación',f.venta?.observacionVenta]
+  ]);
+  agregarBloqueFinanciero(c,'Auditoría',[
+    ['Creado en',f.auditoria?.creadoEn],['Creado por',f.auditoria?.creadoPor],['Actualizado en',f.auditoria?.actualizadoEn],['Actualizado por',f.auditoria?.actualizadoPor],['Reparado en',f.auditoria?.reparadoEn]
+  ]);
+  document.getElementById('ov-finanzas').classList.add('on');
+}
+
 function abrirLogin(){document.getElementById('inp-email').value='';document.getElementById('inp-pass').value='';document.getElementById('perr').classList.remove('on');document.getElementById('ov-login').classList.add('on');}
 async function doLogin(){
   const email=document.getElementById('inp-email').value.trim();
@@ -668,13 +821,19 @@ async function actualizarSesionAdmin(user){
     ['ov-form','ov-form-entrega','ov-ficha'].forEach(cerrar);
     if(document.getElementById('sec-ventas').classList.contains('on'))goSec('inicio',document.querySelector('.nav-links .nb'));
   }
+  if(!puedeVerFinanzas()){
+    finanzas=[];cerrar('ov-finanzas');
+    if(document.getElementById('sec-finanzas').classList.contains('on'))goSec('inicio',document.querySelector('.nav-links .nb'));
+  }
   render();
 }
 onAuthStateChanged(auth,actualizarSesionAdmin);
 
-function abrirForm(id){
+async function abrirForm(id){
   if(!requireSuperAdmin())return;
   const a=id?autos.find(x=>x.id===id):null;
+  let fechaIngreso=a?.fechaIngreso||'';
+  if(a)try{const finanzas=await getDoc(doc(db,'finanzasVehiculos',a.id));if(finanzas.exists())fechaIngreso=finanzas.data().fechaIngreso||fechaIngreso;}catch(e){console.error(e);}
   editId=a?a.id:null;
   document.getElementById('fm-title').textContent=a?'EDITAR VEHÍCULO':'AGREGAR VEHÍCULO';
   document.getElementById('fm-marca').value=a?.marca||'';
@@ -682,7 +841,7 @@ function abrirForm(id){
   document.getElementById('fm-anio').value=a?.anio||'';
   document.getElementById('fm-km').value=a?.km||'';
   document.getElementById('fm-precio').value=a?.precio||'';
-  document.getElementById('fm-fecha-ingreso').value=a?(a.fechaIngreso||''):fechaHoy();
+  document.getElementById('fm-fecha-ingreso').value=a?fechaIngreso:fechaHoy();
   document.getElementById('fm-cond').value=a?.condicion||'Seminuevo';
   document.getElementById('fm-estado').value=a?.estado==='vendido'?'disponible':(a?.estado||'disponible');
   document.getElementById('fm-destacado').value=a?.destacado||'';
@@ -704,12 +863,12 @@ async function guardarAuto(){
   if(!marca||!modelo){showToast('⚠ Marca y modelo obligatorios');return;}
   const autoActual=editId?autos.find(x=>x.id===editId):null;
   const vantaActual=autoActual?.venta||null;
+  const fechaIngreso=document.getElementById('fm-fecha-ingreso').value;
   const data={
     id:editId||Date.now().toString(),marca,modelo,
     anio:document.getElementById('fm-anio').value.trim(),
     km:document.getElementById('fm-km').value.trim(),
     precio:document.getElementById('fm-precio').value.trim(),
-    fechaIngreso:document.getElementById('fm-fecha-ingreso').value,
     condicion:document.getElementById('fm-cond').value,
     estado:autoActual?.estado==='vendido'?'vendido':document.getElementById('fm-estado').value,
     destacado:document.getElementById('fm-destacado').value,
@@ -725,7 +884,7 @@ async function guardarAuto(){
   };
   const autosAnteriores=autos;
   autos=editId?autos.map(a=>a.id===editId?data:a):[data,...autos];
-  if(!await(editId?guardar():guardarAltaConFinanzas(data))){autos=autosAnteriores;return;}
+  if(!await(editId?guardarEdicionConFinanzas(data,fechaIngreso):guardarAltaConFinanzas(data,fechaIngreso))){autos=autosAnteriores;return;}
   cerrar('ov-form');render();
   showToast(editId?'✓ Actualizado':'✓ Vehículo agregado');
 }
@@ -808,7 +967,7 @@ async function toggleVendido(id,checked){
   if(checked&&!a.venta.fecha)a.venta.fecha=new Date().toISOString().split('T')[0];
   const c=document.getElementById('vcampos');
   if(c){c.style.opacity=checked?'1':'0.4';c.style.pointerEvents=checked?'auto':'none';}
-  if(!await guardar()){a.estado=estadoAnterior;a.venta=ventaAnterior;render();return;}
+  if(!await guardarEstadoFinanciero(a)){a.estado=estadoAnterior;a.venta=ventaAnterior;render();return;}
   render();
   showToast(checked?'✓ Marcado como vendido':'↩ Venta revertida');
 }
@@ -896,6 +1055,7 @@ window.verFicha=verFicha;window.toggleVendido=toggleVendido;window.guardarDatosV
 window.abrirFormEntrega=abrirFormEntrega;window.guardarEntrega=guardarEntrega;window.eliminarEntrega=eliminarEntrega;window.verEntrega=verEntrega;
 window.cerrar=cerrar;window.cambiarFoto=cambiarFoto;window.verFotoFull=verFotoFull;window.navegarFoto=navegarFoto;
 window.copiarWA=copiarWA;window.consultarWA=consultarWA;window.filtrar=filtrar;window.limpiarFil=limpiarFil;window.renderVentas=renderVentas;window.limpiarVF=limpiarVF;window.renderDestacados=renderDestacados;
+window.renderFinanzas=renderFinanzas;window.limpiarFiltrosFinanzas=limpiarFiltrosFinanzas;window.verFinanzas=verFinanzas;
 
 showToast('Cargando catálogo...');
 cargar();
