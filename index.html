@@ -738,6 +738,51 @@ function estadoCargaCompra(compra={}){
   const obligatorios=[compra.fechaCompra,Number(compra.precioCompra)||0,compra.responsableCompra];
   return valores.every(v=>!v)?'Sin datos':obligatorios.every(Boolean)?'Completa':'Parcial';
 }
+function fechaLocalValida(fecha){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha||''))return null;
+  const [anio,mes,dia]=fecha.split('-').map(Number);
+  const valor=new Date(anio,mes-1,dia);
+  return valor.getFullYear()===anio&&valor.getMonth()===mes-1&&valor.getDate()===dia?valor:null;
+}
+function calcularDiasStock(fechaIngreso,fechaVenta){
+  if(!fechaIngreso)return'Fecha ingreso pendiente';
+  const inicio=fechaLocalValida(fechaIngreso);
+  if(!inicio)return'Fecha ingreso inválida';
+  const fin=fechaVenta?fechaLocalValida(fechaVenta):fechaLocalValida(fechaHoy());
+  if(!fin)return fechaVenta?'Fecha venta inválida':'Fecha actual inválida';
+  return Math.max(0,Math.floor((fin-inicio)/86400000));
+}
+function calcularResumenFinanciero(f,gastos=[]){
+  const precioCompra=Number(f.compra?.precioCompra)||0;
+  const totalGastos=gastos.reduce((total,gasto)=>total+(Number(gasto.monto)||0),0);
+  const comisionCompra=Number(f.comisiones?.comisionCompra)||0;
+  const comisionVenta=Number(f.comisiones?.comisionVenta)||0;
+  const totalComisiones=comisionCompra+comisionVenta;
+  const capitalInvertido=precioCompra+totalGastos;
+  const costoTotal=capitalInvertido+totalComisiones;
+  const precioVentaFinal=Number(f.venta?.precioVentaFinal)||0;
+  const margenBruto=precioVentaFinal>0?precioVentaFinal-costoTotal:null;
+  const margenPorcentaje=margenBruto!==null&&costoTotal>0?(margenBruto/costoTotal)*100:null;
+  let estado='En proceso';
+  if(!precioCompra)estado='Sin compra';
+  else if(precioVentaFinal>0)estado='Vendido';
+  else if(f.estadoFinanciero==='vendido')estado='Listo para calcular';
+  return{totalGastos,totalComisiones,capitalInvertido,costoTotal,margenBruto,margenPorcentaje,diasEnStock:calcularDiasStock(f.fechaIngreso,f.venta?.fechaVenta),estado};
+}
+function formatMontoResumen(v){
+  if(v===null||v===undefined)return'—';
+  const n=Number(v);if(Number.isNaN(n))return'—';
+  return`${n<0?'-':''}₲ ${Math.abs(n).toLocaleString('es-PY')}`;
+}
+function renderResumenFinanciero(contenedor,f,gastos){
+  const resumen=calcularResumenFinanciero(f,gastos);
+  const bloque=document.createElement('div');bloque.className='fin-block';
+  const encabezado=document.createElement('div');encabezado.className='fin-block-title';encabezado.textContent='Resumen financiero';
+  const estado=document.createElement('div');estado.className='fin-status '+(resumen.estado==='Vendido'?'completa':resumen.estado==='Listo para calcular'?'parcial':'');estado.textContent='Estado financiero: '+resumen.estado;
+  bloque.append(encabezado,estado);
+  [['Total gastos',formatMontoResumen(resumen.totalGastos)],['Comisiones',formatMontoResumen(resumen.totalComisiones)],['Capital invertido',formatMontoResumen(resumen.capitalInvertido)],['Costo total',formatMontoResumen(resumen.costoTotal)],['Margen bruto',formatMontoResumen(resumen.margenBruto)],['Margen %',resumen.margenPorcentaje===null?'—':`${resumen.margenPorcentaje.toFixed(2)}%`],['Días en stock',resumen.diasEnStock]].forEach(([etiqueta,valor])=>agregarCampoFinanciero(bloque,etiqueta,valor));
+  contenedor.appendChild(bloque);
+}
 function agregarInputCompra(contenedor,etiqueta,id,valor,{type='text',full=false}={}){
   const wrap=document.createElement('div');if(full)wrap.className='fin-form-full';
   const label=document.createElement('div');label.className='fl';label.textContent=etiqueta;
@@ -853,8 +898,10 @@ async function renderGastosFinancieros(contenedor,autoId){
       const agregar=document.createElement('button');agregar.className='brojo';agregar.textContent='Agregar gasto';agregar.addEventListener('click',()=>agregarGastoFinanciero(autoId));
       actions.appendChild(agregar);bloque.append(grid,actions);
     }
+    return gastos;
   }catch(error){
     console.error(error);estado.textContent='No se pudieron cargar los gastos.';
+    return[];
   }
 }
 async function cargarFinanzas(){
@@ -908,7 +955,8 @@ async function verFinanzas(id){
     ['Marca',f.vehiculo?.marca],['Modelo',f.vehiculo?.modelo],['Año',f.vehiculo?.anio],['Combustible',f.vehiculo?.combustible]
   ]);
   renderCompraFinanciera(c,f);
-  await renderGastosFinancieros(c,f.id);
+  const gastos=await renderGastosFinancieros(c,f.id);
+  renderResumenFinanciero(c,f,gastos);
   renderComisionesFinancieras(c,f);
   renderVentaFinanciera(c,f);
   agregarBloqueFinanciero(c,'Auditoría',[
