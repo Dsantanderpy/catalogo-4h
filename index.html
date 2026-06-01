@@ -744,6 +744,12 @@ function agregarInputCompra(contenedor,etiqueta,id,valor,{type='text',full=false
   const input=document.createElement('input');input.className='fi';input.id=id;input.type=type;input.value=valor||'';
   wrap.append(label,input);contenedor.appendChild(wrap);
 }
+function enteroNoNegativo(valor,nombre){
+  const texto=valor.trim();
+  if(!texto)return 0;
+  if(!/^\d+$/.test(texto)){alert(`${nombre} debe ingresarse sin puntos ni comas.`);return null;}
+  return Number(texto);
+}
 function renderCompraFinanciera(contenedor,f){
   const compra=f.compra||{};
   const bloque=document.createElement('div');bloque.className='fin-block';
@@ -765,6 +771,46 @@ function renderCompraFinanciera(contenedor,f){
   const actions=document.createElement('div');actions.className='ff';
   const guardar=document.createElement('button');guardar.className='brojo';guardar.textContent='Guardar compra';guardar.addEventListener('click',()=>guardarCompraFinanciera(f.id));
   actions.appendChild(guardar);bloque.append(grid,actions);contenedor.appendChild(bloque);
+}
+function renderComisionesFinancieras(contenedor,f){
+  const comisiones=f.comisiones||{};
+  if(!isSuperAdmin){
+    agregarBloqueFinanciero(contenedor,'Comisiones',[
+      ['Compra',formatPrecio(comisiones.comisionCompra)],['Venta',formatPrecio(comisiones.comisionVenta)],['Responsable',comisiones.responsableComision],['Observación',comisiones.observacionComision]
+    ]);return;
+  }
+  const bloque=document.createElement('div');bloque.className='fin-block';
+  const encabezado=document.createElement('div');encabezado.className='fin-block-title';encabezado.textContent='Comisiones';
+  const grid=document.createElement('div');grid.className='fin-form-grid';
+  agregarInputCompra(grid,'Comisión de compra','fco-compra',comisiones.comisionCompra);
+  agregarInputCompra(grid,'Comisión de venta','fco-venta',comisiones.comisionVenta);
+  agregarInputCompra(grid,'Responsable','fco-responsable',comisiones.responsableComision);
+  agregarInputCompra(grid,'Observación','fco-observacion',comisiones.observacionComision,{full:true});
+  const actions=document.createElement('div');actions.className='ff';
+  const guardar=document.createElement('button');guardar.className='brojo';guardar.textContent='Guardar comisiones';guardar.addEventListener('click',()=>guardarComisionesFinancieras(f.id));
+  actions.appendChild(guardar);bloque.append(encabezado,grid,actions);contenedor.appendChild(bloque);
+}
+function renderVentaFinanciera(contenedor,f){
+  const venta=f.venta||{};
+  if(!isSuperAdmin){
+    agregarBloqueFinanciero(contenedor,'Venta',[
+      ['Precio publicado',formatPrecio(venta.precioPublicado)],['Precio final',formatPrecio(venta.precioVentaFinal)],['Fecha',venta.fechaVenta],['Responsable',venta.responsableVenta],['Forma',venta.formaVenta],['Motivo descuento',venta.motivoDescuento],['Observación',venta.observacionVenta]
+    ]);return;
+  }
+  const bloque=document.createElement('div');bloque.className='fin-block';
+  const encabezado=document.createElement('div');encabezado.className='fin-block-title';encabezado.textContent='Venta';
+  agregarCampoFinanciero(bloque,'Precio publicado',formatPrecio(venta.precioPublicado));
+  const grid=document.createElement('div');grid.className='fin-form-grid';grid.style.marginTop='8px';
+  agregarInputCompra(grid,'Fecha de venta','fv-fecha',venta.fechaVenta,{type:'date'});
+  agregarInputCompra(grid,'Precio final','fv-precio-final',venta.precioVentaFinal);
+  agregarInputCompra(grid,'Responsable','fv-responsable',venta.responsableVenta);
+  agregarInputCompra(grid,'Forma de venta','fv-forma',venta.formaVenta);
+  agregarInputCompra(grid,'Motivo de descuento','fv-motivo',venta.motivoDescuento);
+  agregarInputCompra(grid,'Observación','fv-observacion',venta.observacionVenta,{full:true});
+  const actions=document.createElement('div');actions.className='ff';
+  const restablecer=document.createElement('button');restablecer.className='bout';restablecer.textContent='Restablecer venta';restablecer.addEventListener('click',()=>restablecerVentaFinanciera(f.id));
+  const guardar=document.createElement('button');guardar.className='brojo';guardar.textContent='Guardar venta final';guardar.addEventListener('click',()=>guardarVentaFinanciera(f.id));
+  actions.append(restablecer,guardar);bloque.append(grid,actions);contenedor.appendChild(bloque);
 }
 function agregarInputGasto(contenedor,etiqueta,id,{type='text',full=false}={}){
   const wrap=document.createElement('div');if(full)wrap.className='fin-form-full';
@@ -863,12 +909,8 @@ async function verFinanzas(id){
   ]);
   renderCompraFinanciera(c,f);
   await renderGastosFinancieros(c,f.id);
-  agregarBloqueFinanciero(c,'Comisiones',[
-    ['Compra',formatPrecio(f.comisiones?.comisionCompra)],['Venta',formatPrecio(f.comisiones?.comisionVenta)],['Responsable',f.comisiones?.responsableComision],['Observación',f.comisiones?.observacionComision]
-  ]);
-  agregarBloqueFinanciero(c,'Venta',[
-    ['Precio publicado',formatPrecio(f.venta?.precioPublicado)],['Precio final',formatPrecio(f.venta?.precioVentaFinal)],['Fecha',f.venta?.fechaVenta],['Responsable',f.venta?.responsableVenta],['Forma',f.venta?.formaVenta],['Motivo descuento',f.venta?.motivoDescuento],['Observación',f.venta?.observacionVenta]
-  ]);
+  renderComisionesFinancieras(c,f);
+  renderVentaFinanciera(c,f);
   agregarBloqueFinanciero(c,'Auditoría',[
     ['Creado en',f.auditoria?.creadoEn],['Creado por',f.auditoria?.creadoPor],['Actualizado en',f.auditoria?.actualizadoEn],['Actualizado por',f.auditoria?.actualizadoPor],['Reparado en',f.auditoria?.reparadoEn]
   ]);
@@ -925,6 +967,70 @@ async function eliminarGastoFinanciero(autoId,gastoId){
     showToast('Gasto eliminado');
     await verFinanzas(autoId);
   }catch(error){console.error(error);alert('No se pudo eliminar el gasto. Revisá tu conexión e intentá nuevamente.');}
+}
+async function guardarComisionesFinancieras(id){
+  if(!requireSuperAdmin())return;
+  const f=finanzas.find(item=>item.id===id);if(!f)return;
+  const comisionCompra=enteroNoNegativo(document.getElementById('fco-compra').value,'La comisión de compra');if(comisionCompra===null)return;
+  const comisionVenta=enteroNoNegativo(document.getElementById('fco-venta').value,'La comisión de venta');if(comisionVenta===null)return;
+  const comisiones={
+    comisionCompra,comisionVenta,
+    responsableComision:document.getElementById('fco-responsable').value.trim(),
+    observacionComision:document.getElementById('fco-observacion').value.trim()
+  };
+  try{
+    const batch=writeBatch(db);
+    batch.update(doc(db,'finanzasVehiculos',id),{comisiones,'auditoria.actualizadoEn':serverTimestamp(),'auditoria.actualizadoPor':currentUser.uid});
+    await batch.commit();
+    f.comisiones=comisiones;
+    showToast('✓ Comisiones guardadas');
+    await verFinanzas(id);
+  }catch(error){console.error(error);alert('No se pudieron guardar las comisiones. Revisá tu conexión e intentá nuevamente.');}
+}
+async function guardarVentaFinanciera(id){
+  if(!requireSuperAdmin())return;
+  const f=finanzas.find(item=>item.id===id);if(!f)return;
+  const precioTexto=document.getElementById('fv-precio-final').value.trim();
+  if(!/^\d+$/.test(precioTexto)||Number(precioTexto)<=0){alert('El precio final debe ser un número mayor a 0, sin puntos ni comas.');return;}
+  const venta={
+    precioPublicado:Number(f.venta?.precioPublicado)||0,
+    precioVentaFinal:Number(precioTexto),
+    fechaVenta:document.getElementById('fv-fecha').value,
+    responsableVenta:document.getElementById('fv-responsable').value.trim(),
+    formaVenta:document.getElementById('fv-forma').value.trim(),
+    motivoDescuento:document.getElementById('fv-motivo').value.trim()||null,
+    observacionVenta:document.getElementById('fv-observacion').value.trim()
+  };
+  try{
+    const batch=writeBatch(db);
+    batch.update(doc(db,'finanzasVehiculos',id),{venta,'auditoria.actualizadoEn':serverTimestamp(),'auditoria.actualizadoPor':currentUser.uid});
+    await batch.commit();
+    f.venta=venta;
+    showToast('✓ Venta final guardada');
+    await verFinanzas(id);
+  }catch(error){console.error(error);alert('No se pudo guardar la venta final. Revisá tu conexión e intentá nuevamente.');}
+}
+async function restablecerVentaFinanciera(id){
+  if(!requireSuperAdmin())return;
+  if(!confirm('¿Restablecer los datos de venta financiera?'))return;
+  const f=finanzas.find(item=>item.id===id);if(!f)return;
+  const venta={
+    precioPublicado:Number(f.venta?.precioPublicado)||0,
+    precioVentaFinal:null,
+    fechaVenta:null,
+    responsableVenta:'',
+    formaVenta:'',
+    motivoDescuento:null,
+    observacionVenta:''
+  };
+  try{
+    const batch=writeBatch(db);
+    batch.update(doc(db,'finanzasVehiculos',id),{venta,'auditoria.actualizadoEn':serverTimestamp(),'auditoria.actualizadoPor':currentUser.uid});
+    await batch.commit();
+    f.venta=venta;
+    showToast('Venta financiera restablecida');
+    await verFinanzas(id);
+  }catch(error){console.error(error);alert('No se pudo restablecer la venta financiera. Revisá tu conexión e intentá nuevamente.');}
 }
 
 function abrirLogin(){document.getElementById('inp-email').value='';document.getElementById('inp-pass').value='';document.getElementById('perr').classList.remove('on');document.getElementById('ov-login').classList.add('on');}
@@ -1195,7 +1301,7 @@ window.verFicha=verFicha;window.toggleVendido=toggleVendido;window.guardarDatosV
 window.abrirFormEntrega=abrirFormEntrega;window.guardarEntrega=guardarEntrega;window.eliminarEntrega=eliminarEntrega;window.verEntrega=verEntrega;
 window.cerrar=cerrar;window.cambiarFoto=cambiarFoto;window.verFotoFull=verFotoFull;window.navegarFoto=navegarFoto;
 window.copiarWA=copiarWA;window.consultarWA=consultarWA;window.filtrar=filtrar;window.limpiarFil=limpiarFil;window.renderVentas=renderVentas;window.limpiarVF=limpiarVF;window.renderDestacados=renderDestacados;
-window.renderFinanzas=renderFinanzas;window.limpiarFiltrosFinanzas=limpiarFiltrosFinanzas;window.verFinanzas=verFinanzas;window.guardarCompraFinanciera=guardarCompraFinanciera;window.agregarGastoFinanciero=agregarGastoFinanciero;window.eliminarGastoFinanciero=eliminarGastoFinanciero;
+window.renderFinanzas=renderFinanzas;window.limpiarFiltrosFinanzas=limpiarFiltrosFinanzas;window.verFinanzas=verFinanzas;window.guardarCompraFinanciera=guardarCompraFinanciera;window.agregarGastoFinanciero=agregarGastoFinanciero;window.eliminarGastoFinanciero=eliminarGastoFinanciero;window.guardarComisionesFinancieras=guardarComisionesFinancieras;window.guardarVentaFinanciera=guardarVentaFinanciera;window.restablecerVentaFinanciera=restablecerVentaFinanciera;
 
 showToast('Cargando catálogo...');
 cargar();
