@@ -134,6 +134,12 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .fin-status.completa{color:var(--verde);border-color:rgba(49,160,89,0.35);background:rgba(49,160,89,0.14);}
 .fin-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .fin-form-full{grid-column:1/-1;}
+.fin-gasto{border-top:1px solid rgba(255,255,255,0.08);padding:9px 0;}
+.fin-gasto:first-of-type{border-top:none;}
+.fin-gasto-head{display:flex;justify-content:space-between;gap:10px;align-items:center;}
+.fin-gasto-concepto{font-size:13px;font-weight:700;color:var(--blanco);}
+.fin-gasto-monto{font-size:13px;font-weight:700;color:var(--dorado);white-space:nowrap;}
+.fin-gasto-meta{font-size:11px;color:var(--apagado);margin-top:3px;overflow-wrap:anywhere;}
 .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:200;align-items:center;justify-content:center;padding:1rem;overflow-y:auto;}
 .ov.on{display:flex;}
 .modal{background:var(--gris);border:1px solid var(--borde);border-radius:12px;width:100%;max-width:500px;max-height:88vh;overflow-y:auto;padding:1.75rem;margin:auto;position:relative;}
@@ -434,7 +440,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+import { getFirestore, addDoc, collection, deleteDoc, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 
 const app = initializeApp({
@@ -760,6 +766,51 @@ function renderCompraFinanciera(contenedor,f){
   const guardar=document.createElement('button');guardar.className='brojo';guardar.textContent='Guardar compra';guardar.addEventListener('click',()=>guardarCompraFinanciera(f.id));
   actions.appendChild(guardar);bloque.append(grid,actions);contenedor.appendChild(bloque);
 }
+function agregarInputGasto(contenedor,etiqueta,id,{type='text',full=false}={}){
+  const wrap=document.createElement('div');if(full)wrap.className='fin-form-full';
+  const label=document.createElement('div');label.className='fl';label.textContent=etiqueta;
+  const input=document.createElement('input');input.className='fi';input.id=id;input.type=type;
+  wrap.append(label,input);contenedor.appendChild(wrap);
+}
+async function renderGastosFinancieros(contenedor,autoId){
+  const bloque=document.createElement('div');bloque.className='fin-block';
+  const encabezado=document.createElement('div');encabezado.className='fin-block-title';encabezado.textContent='Gastos';
+  const estado=document.createElement('div');estado.className='fin-meta';estado.textContent='Cargando gastos...';
+  bloque.append(encabezado,estado);contenedor.appendChild(bloque);
+  try{
+    const snapshot=await getDocs(collection(db,'finanzasVehiculos',autoId,'gastos'));
+    const gastos=snapshot.docs.map(s=>({id:s.id,...s.data()})).sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||'')));
+    estado.textContent=gastos.length?`${gastos.length} gasto${gastos.length===1?'':'s'} registrado${gastos.length===1?'':'s'}`:'Sin gastos registrados';
+    gastos.forEach(gasto=>{
+      const item=document.createElement('div');item.className='fin-gasto';
+      const head=document.createElement('div');head.className='fin-gasto-head';
+      const concepto=document.createElement('div');concepto.className='fin-gasto-concepto';concepto.textContent=valorFinanciero(gasto.concepto);
+      const monto=document.createElement('div');monto.className='fin-gasto-monto';monto.textContent=formatPrecio(gasto.monto);
+      const meta=document.createElement('div');meta.className='fin-gasto-meta';meta.textContent=[gasto.fecha,gasto.categoria,gasto.responsable,gasto.observacion].filter(Boolean).join(' · ')||'—';
+      head.append(concepto,monto);item.append(head,meta);
+      if(isSuperAdmin){
+        const actions=document.createElement('div');actions.style.marginTop='7px';
+        const eliminar=document.createElement('button');eliminar.className='bdel';eliminar.textContent='Eliminar';eliminar.addEventListener('click',()=>eliminarGastoFinanciero(autoId,gasto.id));
+        actions.appendChild(eliminar);item.appendChild(actions);
+      }
+      bloque.appendChild(item);
+    });
+    if(isSuperAdmin){
+      const grid=document.createElement('div');grid.className='fin-form-grid';grid.style.marginTop='12px';
+      agregarInputGasto(grid,'Fecha','fg-fecha',{type:'date'});
+      agregarInputGasto(grid,'Concepto','fg-concepto');
+      agregarInputGasto(grid,'Categoría','fg-categoria');
+      agregarInputGasto(grid,'Monto','fg-monto');
+      agregarInputGasto(grid,'Responsable','fg-responsable');
+      agregarInputGasto(grid,'Observación','fg-observacion',{full:true});
+      const actions=document.createElement('div');actions.className='ff';
+      const agregar=document.createElement('button');agregar.className='brojo';agregar.textContent='Agregar gasto';agregar.addEventListener('click',()=>agregarGastoFinanciero(autoId));
+      actions.appendChild(agregar);bloque.append(grid,actions);
+    }
+  }catch(error){
+    console.error(error);estado.textContent='No se pudieron cargar los gastos.';
+  }
+}
 async function cargarFinanzas(){
   if(!puedeVerFinanzas())return;
   const e=document.getElementById('e-finanzas');
@@ -800,7 +851,7 @@ function limpiarFiltrosFinanzas(){
   ['ff-buscar','ff-estado','ff-sucursal'].forEach(id=>document.getElementById(id).value='');
   renderFinanzas();
 }
-function verFinanzas(id){
+async function verFinanzas(id){
   if(!puedeVerFinanzas()){alert('Acceso restringido.');return;}
   const f=finanzas.find(item=>item.id===id);if(!f)return;
   const c=document.getElementById('finanzas-c');c.textContent='';
@@ -811,6 +862,7 @@ function verFinanzas(id){
     ['Marca',f.vehiculo?.marca],['Modelo',f.vehiculo?.modelo],['Año',f.vehiculo?.anio],['Combustible',f.vehiculo?.combustible]
   ]);
   renderCompraFinanciera(c,f);
+  await renderGastosFinancieros(c,f.id);
   agregarBloqueFinanciero(c,'Comisiones',[
     ['Compra',formatPrecio(f.comisiones?.comisionCompra)],['Venta',formatPrecio(f.comisiones?.comisionVenta)],['Responsable',f.comisiones?.responsableComision],['Observación',f.comisiones?.observacionComision]
   ]);
@@ -843,6 +895,36 @@ async function guardarCompraFinanciera(id){
     showToast('✓ Compra guardada');
     verFinanzas(id);
   }catch(error){console.error(error);alert('No se pudo guardar la compra. Revisá tu conexión e intentá nuevamente.');}
+}
+async function agregarGastoFinanciero(autoId){
+  if(!requireSuperAdmin())return;
+  const monto=document.getElementById('fg-monto').value.trim();
+  if(!/^\d+$/.test(monto)||Number(monto)<=0){alert('El monto debe ser un número mayor a 0, sin puntos ni comas.');return;}
+  const gasto={
+    fecha:document.getElementById('fg-fecha').value,
+    concepto:document.getElementById('fg-concepto').value.trim(),
+    categoria:document.getElementById('fg-categoria').value.trim(),
+    monto:Number(monto),
+    responsable:document.getElementById('fg-responsable').value.trim(),
+    observacion:document.getElementById('fg-observacion').value.trim(),
+    creadoEn:serverTimestamp(),
+    creadoPor:currentUser.uid
+  };
+  if(!gasto.fecha||!gasto.concepto||!gasto.categoria){alert('Fecha, concepto y categoría son obligatorios.');return;}
+  try{
+    await addDoc(collection(db,'finanzasVehiculos',autoId,'gastos'),gasto);
+    showToast('✓ Gasto agregado');
+    await verFinanzas(autoId);
+  }catch(error){console.error(error);alert('No se pudo agregar el gasto. Revisá tu conexión e intentá nuevamente.');}
+}
+async function eliminarGastoFinanciero(autoId,gastoId){
+  if(!requireSuperAdmin())return;
+  if(!confirm('¿Eliminar este gasto?'))return;
+  try{
+    await deleteDoc(doc(db,'finanzasVehiculos',autoId,'gastos',gastoId));
+    showToast('Gasto eliminado');
+    await verFinanzas(autoId);
+  }catch(error){console.error(error);alert('No se pudo eliminar el gasto. Revisá tu conexión e intentá nuevamente.');}
 }
 
 function abrirLogin(){document.getElementById('inp-email').value='';document.getElementById('inp-pass').value='';document.getElementById('perr').classList.remove('on');document.getElementById('ov-login').classList.add('on');}
@@ -1113,7 +1195,7 @@ window.verFicha=verFicha;window.toggleVendido=toggleVendido;window.guardarDatosV
 window.abrirFormEntrega=abrirFormEntrega;window.guardarEntrega=guardarEntrega;window.eliminarEntrega=eliminarEntrega;window.verEntrega=verEntrega;
 window.cerrar=cerrar;window.cambiarFoto=cambiarFoto;window.verFotoFull=verFotoFull;window.navegarFoto=navegarFoto;
 window.copiarWA=copiarWA;window.consultarWA=consultarWA;window.filtrar=filtrar;window.limpiarFil=limpiarFil;window.renderVentas=renderVentas;window.limpiarVF=limpiarVF;window.renderDestacados=renderDestacados;
-window.renderFinanzas=renderFinanzas;window.limpiarFiltrosFinanzas=limpiarFiltrosFinanzas;window.verFinanzas=verFinanzas;window.guardarCompraFinanciera=guardarCompraFinanciera;
+window.renderFinanzas=renderFinanzas;window.limpiarFiltrosFinanzas=limpiarFiltrosFinanzas;window.verFinanzas=verFinanzas;window.guardarCompraFinanciera=guardarCompraFinanciera;window.agregarGastoFinanciero=agregarGastoFinanciero;window.eliminarGastoFinanciero=eliminarGastoFinanciero;
 
 showToast('Cargando catálogo...');
 cargar();
