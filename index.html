@@ -391,7 +391,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 
 const app = initializeApp({
@@ -471,6 +471,28 @@ function formatPrecio(v){
 function parseFotos(a){return(a.fotos||'').split('\n').map(l=>l.trim()).filter(l=>l.startsWith('http'));}
 function getSucursal(a){return a?.sucursal==='sucursal'?'sucursal':'central';}
 function fechaHoy(){const d=new Date();return[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');}
+function crearRegistroFinanciero(a){
+  return{
+    autoId:a.id,estadoFinanciero:'en_stock',sucursal:getSucursal(a),origenStock:'playa4h',fechaIngreso:a.fechaIngreso||'',
+    vehiculo:{marca:a.marca,modelo:a.modelo,anio:a.anio,combustible:''},
+    compra:{fechaCompra:null,precioCompra:0,origenCompra:'',proveedor:'',responsableCompra:'',observacionCompra:''},
+    comisiones:{comisionCompra:0,comisionVenta:0,responsableComision:'',observacionComision:''},
+    venta:{precioPublicado:Number(a.precio)||0,precioVentaFinal:null,fechaVenta:null,responsableVenta:'',formaVenta:'',motivoDescuento:null,observacionVenta:''},
+    resumen:{totalGastos:0,costoTotal:0,margenBruto:null,margenPorcentaje:null},
+    auditoria:{creadoEn:serverTimestamp(),creadoPor:currentUser.uid,actualizadoEn:serverTimestamp(),actualizadoPor:currentUser.uid}
+  };
+}
+async function guardarAltaConFinanzas(a){
+  if(!requireSuperAdmin())return false;
+  if(!cargaOk){alert('No se puede guardar porque el catálogo no se cargó correctamente. Recargá la página e intentá nuevamente.');return false;}
+  try{
+    const batch=writeBatch(db);
+    batch.set(DOC,{autos,entregas});
+    batch.set(doc(db,'finanzasVehiculos',a.id),crearRegistroFinanciero(a));
+    await batch.commit();
+    return true;
+  }catch(e){console.error(e);alert('No se pudo guardar el vehículo y su registro financiero. Revisá tu conexión e intentá nuevamente.');return false;}
+}
 
 function cardHTML(a){
   const pts=(a.validacion||'').split('\n').filter(l=>l.trim());
@@ -703,7 +725,7 @@ async function guardarAuto(){
   };
   const autosAnteriores=autos;
   autos=editId?autos.map(a=>a.id===editId?data:a):[data,...autos];
-  if(!await guardar()){autos=autosAnteriores;return;}
+  if(!await(editId?guardar():guardarAltaConFinanzas(data))){autos=autosAnteriores;return;}
   cerrar('ov-form');render();
   showToast(editId?'✓ Actualizado':'✓ Vehículo agregado');
 }
