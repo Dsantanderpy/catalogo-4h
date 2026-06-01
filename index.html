@@ -240,6 +240,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
     <button class="nb" id="nb-disp" onclick="goSec('catalogo',this)">Disponibles (0)</button>
     <button class="nb" id="nb-vend" onclick="goSec('vendidos',this)">Vendidos (0)</button>
     <button class="nb nb-admin-only" id="nb-ventas" onclick="goSec('ventas',this)">📊 Ventas</button>
+    <button class="nb nb-finanzas-only" id="nb-dashboard" onclick="goSec('dashboard',this)">Dashboard</button>
     <button class="nb nb-finanzas-only" id="nb-finanzas" onclick="goSec('finanzas',this)">Finanzas</button>
     <button class="nb adm" id="nb-adm" onclick="abrirLogin()">Admin</button>
   </div>
@@ -339,6 +340,15 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
     </div>
     <div id="g-finanzas"></div>
     <div class="empty" id="e-finanzas">Sin registros financieros disponibles</div>
+  </div>
+</div>
+
+<div id="sec-dashboard" class="sec">
+  <div class="wrap">
+    <div class="sec-header"><div><div class="sec-sup">Área privada</div><div class="sec-title">Dashboard ejecutivo</div></div></div>
+    <div id="dashboard-estado" class="fin-meta">Cargando métricas financieras...</div>
+    <div id="dashboard-metricas" class="grid" style="margin-top:12px"></div>
+    <div id="dashboard-rankings" class="fg" style="margin-top:18px"></div>
   </div>
 </div>
 
@@ -471,7 +481,7 @@ async function guardar(){
 
 function goSec(id,btn){
   if(id==='ventas'&&!isSuperAdmin){alert('Acceso restringido.');return;}
-  if(id==='finanzas'&&!puedeVerFinanzas()){alert('Acceso restringido.');return;}
+  if((id==='finanzas'||id==='dashboard')&&!puedeVerFinanzas()){alert('Acceso restringido.');return;}
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.nb:not(#nb-adm)').forEach(b=>b.classList.remove('on'));
   document.getElementById('sec-'+id).classList.add('on');
@@ -479,6 +489,7 @@ function goSec(id,btn){
   window.scrollTo(0,0);
   if(id==='ventas')renderVentas();
   if(id==='finanzas')cargarFinanzas();
+  if(id==='dashboard')cargarDashboard();
 }
 
 function render(){
@@ -918,6 +929,54 @@ async function cargarFinanzas(){
     e.style.display='block';e.textContent='No se pudieron cargar los registros financieros.';
   }
 }
+function nombreVehiculoFinanciero(f){
+  return[f.vehiculo?.marca,f.vehiculo?.modelo,f.vehiculo?.anio].filter(Boolean).join(' ')||f.id;
+}
+function agregarMetricaDashboard(contenedor,etiqueta,valor){
+  const card=document.createElement('div');card.className='fin-card';
+  const value=document.createElement('div');value.className='fin-name';value.style.fontSize='1.35rem';value.textContent=valor;
+  const label=document.createElement('div');label.className='fin-meta';label.textContent=etiqueta;
+  card.append(value,label);contenedor.appendChild(card);
+}
+function renderRankingDashboard(contenedor,titulo,items,valor){
+  const bloque=document.createElement('div');bloque.className='fin-block';
+  const encabezado=document.createElement('div');encabezado.className='fin-block-title';encabezado.textContent=titulo;
+  bloque.appendChild(encabezado);
+  if(!items.length){
+    const vacio=document.createElement('div');vacio.className='fin-meta';vacio.textContent='Sin datos disponibles';bloque.appendChild(vacio);
+  }
+  items.forEach((item,index)=>agregarCampoFinanciero(bloque,`${index+1}. ${nombreVehiculoFinanciero(item.f)}`,valor(item.resumen)));
+  contenedor.appendChild(bloque);
+}
+async function cargarDashboard(){
+  if(!puedeVerFinanzas())return;
+  const estado=document.getElementById('dashboard-estado');estado.style.display='block';estado.textContent='Cargando métricas financieras...';
+  const metricas=document.getElementById('dashboard-metricas');metricas.textContent='';
+  const rankings=document.getElementById('dashboard-rankings');rankings.textContent='';
+  try{
+    const snapshot=await getDocs(collection(db,'finanzasVehiculos'));
+    const registros=snapshot.docs.map(s=>({id:s.id,...s.data()}));
+    const calculados=await Promise.all(registros.map(async f=>{
+      const gastos=await getDocs(collection(db,'finanzasVehiculos',f.id,'gastos'));
+      return{f,resumen:calcularResumenFinanciero(f,gastos.docs.map(s=>s.data()))};
+    }));
+    const enStock=calculados.filter(item=>item.f.estadoFinanciero==='en_stock');
+    const vendidos=calculados.filter(item=>item.f.estadoFinanciero==='vendido');
+    const capitalInvertido=enStock.reduce((total,item)=>total+item.resumen.costoTotal,0);
+    const margenAcumulado=vendidos.reduce((total,item)=>total+(item.resumen.margenBruto||0),0);
+    const diasValidos=enStock.map(item=>item.resumen.diasEnStock).filter(Number.isFinite);
+    agregarMetricaDashboard(metricas,'Vehículos en stock',String(enStock.length));
+    agregarMetricaDashboard(metricas,'Capital invertido',formatMontoResumen(capitalInvertido));
+    agregarMetricaDashboard(metricas,'Vehículos vendidos',String(vendidos.length));
+    agregarMetricaDashboard(metricas,'Margen acumulado',formatMontoResumen(margenAcumulado));
+    agregarMetricaDashboard(metricas,'Promedio días en stock',diasValidos.length?(diasValidos.reduce((total,dias)=>total+dias,0)/diasValidos.length).toFixed(1):'—');
+    renderRankingDashboard(rankings,'Top 5 margen',vendidos.filter(item=>item.resumen.margenBruto!==null).sort((a,b)=>b.resumen.margenBruto-a.resumen.margenBruto).slice(0,5),resumen=>formatMontoResumen(resumen.margenBruto));
+    renderRankingDashboard(rankings,'Top 5 días en stock',enStock.filter(item=>Number.isFinite(item.resumen.diasEnStock)).sort((a,b)=>b.resumen.diasEnStock-a.resumen.diasEnStock).slice(0,5),resumen=>`${resumen.diasEnStock} días`);
+    estado.style.display='none';
+  }catch(error){
+    console.error(error);estado.textContent='No se pudieron cargar las métricas financieras.';
+  }
+}
 function renderFinanzas(){
   if(!puedeVerFinanzas())return;
   const buscar=document.getElementById('ff-buscar').value.trim().toLowerCase();
@@ -1119,6 +1178,7 @@ async function actualizarSesionAdmin(user){
   if(!puedeVerFinanzas()){
     finanzas=[];cerrar('ov-finanzas');
     if(document.getElementById('sec-finanzas').classList.contains('on'))goSec('inicio',document.querySelector('.nav-links .nb'));
+    if(document.getElementById('sec-dashboard').classList.contains('on'))goSec('inicio',document.querySelector('.nav-links .nb'));
   }
   render();
 }
