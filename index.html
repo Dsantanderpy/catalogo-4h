@@ -30,7 +30,7 @@
   --verde:#4caf50;--dorado:#c9a84c;
 }
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:var(--negro);color:var(--blanco);font-family:'Barlow',sans-serif;min-height:100vh;}
+body{background:#121212;color:var(--blanco);font-family:'Barlow',sans-serif;min-height:100vh;}
 button,input,select,textarea{font-family:'Barlow',sans-serif;}
 #nav{background:linear-gradient(135deg,#f4ead8 0%,#fff8ec 100%);padding:0 1.5rem;display:flex;align-items:center;justify-content:center;height:58px;position:sticky;top:0;z-index:100;gap:8px;border-bottom:1px solid rgba(16,36,58,0.12);box-shadow:0 8px 22px rgba(16,36,58,0.08);}
 .nav-links{display:flex;gap:2px;flex-wrap:wrap;align-items:center;background:rgba(255,255,255,0.46);padding:4px;border-radius:10px;border:1px solid rgba(16,36,58,0.1);}
@@ -228,7 +228,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
   .nav-links{width:100%;max-width:430px;margin:0 auto;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;padding:6px;gap:6px;border-radius:16px;background:rgba(255,255,255,0.5);border:1px solid rgba(16,36,58,0.1);box-shadow:0 8px 22px rgba(16,36,58,0.08);}
   .nb{padding:7px 9px;font-size:10px;flex:0 1 auto;text-align:center;min-width:0;letter-spacing:0.02px;border-radius:12px;background:rgba(16,36,58,0.045);color:#5d6974;line-height:1.12;}
   .nb.on{background:var(--rojo);color:#fff;box-shadow:0 4px 12px rgba(204,26,26,0.26);}
-  .nb.adm{font-size:9px;color:#747b84;background:rgba(255,255,255,0.02);opacity:0.62;}
+  .nb.adm{display:none;}
   .nb.adm-out{font-size:9px;color:#9a6666;background:rgba(224,59,59,0.05);opacity:0.68;}
   .hero{padding:1.8rem 1rem 2rem;}
   .hero-copy{text-align:left;}
@@ -242,9 +242,13 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
   .hero-stat-l{font-size:9px;letter-spacing:0.9px;margin-top:4px;}
   .hero-showroom,.hero-showroom img{border-radius:16px;}
   .grid,.vend-grid,.dest-grid{grid-template-columns:1fr;gap:12px;}
-  .cimg,.vend-img{height:220px;}
-  .cno-img,.vend-no-img{height:220px;}
+  .cimg,.vend-img{height:190px;}
+  .cno-img,.vend-no-img{height:190px;}
   .filters,.ventas-filters{grid-template-columns:1fr 1fr;}
+  #sec-catalogo .filters{padding:10px;gap:7px;margin-bottom:0.7rem;border-radius:12px;}
+  #sec-catalogo .f-label{font-size:9px;margin-bottom:3px;}
+  #sec-catalogo .fi-f{padding:7px 9px;font-size:12.5px;border-radius:7px;}
+  #sec-catalogo .btn-clear{padding:7px 9px;font-size:10.5px;border-radius:7px;}
   .fg{grid-template-columns:1fr;}
   .full{grid-column:1;}
   .specs{grid-template-columns:repeat(2,1fr);}
