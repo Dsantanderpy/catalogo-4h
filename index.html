@@ -32,8 +32,7 @@
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:var(--negro);color:var(--blanco);font-family:'Barlow',sans-serif;min-height:100vh;}
 button,input,select,textarea{font-family:'Barlow',sans-serif;}
-#nav{background:var(--negro);padding:0 1.5rem;display:flex;align-items:center;justify-content:space-between;height:58px;position:sticky;top:0;z-index:100;gap:8px;border-bottom:1px solid var(--borde);box-shadow:0 1px 20px rgba(0,0,0,0.5);}
-.logo-img{height:48px;width:auto;object-fit:contain;display:block;}
+#nav{background:var(--negro);padding:0 1.5rem;display:flex;align-items:center;justify-content:center;height:58px;position:sticky;top:0;z-index:100;gap:8px;border-bottom:1px solid var(--borde);box-shadow:0 1px 20px rgba(0,0,0,0.5);}
 .nav-links{display:flex;gap:2px;flex-wrap:wrap;align-items:center;background:var(--gris);padding:4px;border-radius:10px;border:1px solid var(--borde);}
 .nb{background:transparent;border:none;color:var(--apagado);padding:6px 14px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;transition:all 0.18s;white-space:nowrap;letter-spacing:0.3px;}
 .nb:hover{color:var(--blanco);background:rgba(255,255,255,0.06);}
@@ -212,19 +211,18 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .dest-precio{font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;font-weight:700;color:var(--dorado);margin-top:6px;}
 @media(max-width:600px){.dest-grid{grid-template-columns:1fr;}}
 
-  .nav-links{width:100%;justify-content:space-between;gap:2px;}
+  .nav-links{width:auto;justify-content:center;gap:2px;}
 @media(max-width:900px){
   .grid,.vend-grid,.dest-grid{grid-template-columns:repeat(2,1fr);}
   .hero-inner{grid-template-columns:1fr;gap:24px;}
 }
 @media(max-width:600px){
-  #nav{height:auto;padding:8px 10px 10px;gap:10px;align-items:center;}
-  .logo-img{height:36px;}
-  .nav-links{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:8px;gap:7px;border-radius:16px;background:rgba(17,18,20,0.96);border:1px solid rgba(255,255,255,0.08);box-shadow:0 8px 24px rgba(0,0,0,0.2);}
-  .nb{padding:8px 8px;font-size:10.5px;flex:initial;text-align:center;min-width:0;letter-spacing:0.05px;border-radius:12px;background:rgba(255,255,255,0.045);color:#b8c0c8;line-height:1.15;}
+  #nav{height:auto;padding:8px 10px 10px;gap:0;align-items:center;justify-content:center;}
+  .nav-links{width:100%;max-width:430px;margin:0 auto;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;padding:6px;gap:6px;border-radius:16px;background:rgba(17,18,20,0.96);border:1px solid rgba(255,255,255,0.08);box-shadow:0 8px 22px rgba(0,0,0,0.16);}
+  .nb{padding:7px 9px;font-size:10px;flex:0 1 auto;text-align:center;min-width:0;letter-spacing:0.02px;border-radius:12px;background:rgba(255,255,255,0.045);color:#b8c0c8;line-height:1.12;}
   .nb.on{background:var(--rojo);color:#fff;box-shadow:0 4px 12px rgba(204,26,26,0.26);}
-  .nb.adm{font-size:9.5px;color:#747b84;background:rgba(255,255,255,0.02);opacity:0.72;}
-  .nb.adm-out{font-size:9.5px;color:#9a6666;background:rgba(224,59,59,0.06);opacity:0.78;}
+  .nb.adm{font-size:9px;color:#747b84;background:rgba(255,255,255,0.02);opacity:0.62;}
+  .nb.adm-out{font-size:9px;color:#9a6666;background:rgba(224,59,59,0.05);opacity:0.68;}
   .hero{padding:1.8rem 1rem 2rem;}
   .hero-copy{text-align:left;}
   .hero h1{letter-spacing:2px;line-height:0.9;}
@@ -232,9 +230,10 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
   .hero-cta,.hero-secondary{width:100%;}
   .hero-benefits{grid-template-columns:1fr;gap:5px;margin-top:10px;}
   .hero-stats{grid-template-columns:1fr 1fr;}
-  .hero-stat{padding:11px 12px;border-radius:14px;}
+  .hero-stat{padding:11px 12px;border-radius:14px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;}
   .hero-stat-n{font-size:1.85rem;}
-  .hero-stat-l{font-size:9px;letter-spacing:0.9px;}
+  .hero-stat-n,.hero-stat-l{text-align:center;width:100%;}
+  .hero-stat-l{font-size:9px;letter-spacing:0.9px;margin-top:4px;}
   .hero-showroom,.hero-showroom img{border-radius:16px;}
   .grid,.vend-grid,.dest-grid{grid-template-columns:1fr;gap:12px;}
   .cimg,.vend-img{height:220px;}
@@ -255,7 +254,6 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 <body>
 
 <div id="nav">
-  <img src="assets/logo-header-4h-v1.png" class="logo-img" alt="Holding 4H">
   <div class="nav-links">
     <button class="nb on" onclick="goSec('inicio',this)">Inicio</button>
     <button class="nb" onclick="goSec('nosotros',this)">Quiénes somos</button>
