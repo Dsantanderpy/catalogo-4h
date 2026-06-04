@@ -467,7 +467,7 @@ const auth = getAuth(app);
 const DOC = doc(db,"catalogo","datos");
 
 const WHATSAPP_NUMERO = "595986147136";
-let autos=[],entregas=[],finanzas=[],isAdmin=false,currentUser=null,currentRole=null,isSuperAdmin=false,isOwner=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false;
+let autos=[],entregas=[],finanzas=[],isAdmin=false,currentUser=null,currentRole=null,isSuperAdmin=false,isOwner=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false,fichaDesdeDeepLink=false;
 
 async function cargar(){
   try{const s=await getDoc(DOC);if(s.exists()){const d=s.data();autos=d.autos||[];entregas=d.entregas||[];}cargaOk=true;}catch(e){console.error(e);alert('No se pudo cargar el catálogo. Los guardados quedan bloqueados para proteger los datos. Revisá tu conexión e intentá recargar la página.');}
@@ -1249,8 +1249,9 @@ async function guardarAuto(){
 
 async function eliminarAuto(id){if(!requireSuperAdmin())return;if(!confirm('¿Eliminar?'))return;const autosAnteriores=autos;autos=autos.filter(a=>a.id!==id);if(!await guardar()){autos=autosAnteriores;return;}render();showToast('Eliminado');}
 
-function verFicha(id){
+function verFicha(id,desdeDeepLink=false){
   const a=autos.find(x=>x.id===id);if(!a)return;
+  fichaDesdeDeepLink=!!desdeDeepLink;
   const pts=(a.validacion||'').split('\n').filter(l=>l.trim());
   const fotos=parseFotos(a);
   galeriaFotos=a.foto?[a.foto,...fotos]:fotos;fotoActiva=0;
@@ -1262,6 +1263,7 @@ function verFicha(id){
     ?`<img class="gal-main" id="gal-main" src="${galeriaFotos[0]}" alt="" onclick="verFotoFull()">${galeriaFotos.length>1?`<div class="thumbs">${galeriaFotos.map((f,i)=>`<img class="thumb${i===0?' act':''}" src="${f}" alt="" onclick="cambiarFoto(${i})" id="thumb-${i}">`).join('')}</div>`:''}`
     :`<div class="gal-vacio">Sin foto</div>`;
   const valH=pts.length?`<div class="fic-val"><div class="fic-vl">¿Por qué este auto?</div>${pts.map(p=>`<div class="fic-vi"><span style="color:var(--verde);flex-shrink:0">✓</span><span>${p.trim().replace(/^•\s*/,'')}</span></div>`).join('')}</div>`:'';
+  const shareBtn=`<button class="brojo" onclick="compartirVehiculo('${id}')">↗ Compartir vehículo</button>`;
   const copyBtn=pts.length?`<button class="bwa" onclick="copiarWA('${id}')">📋 Copiar texto para WhatsApp</button>`:'';
   const estadoColor=a.estado==='vendido'?'var(--verde)':a.estado==='senado'?'var(--dorado)':'var(--rojo)';
   const estadoLabel=a.estado==='vendido'?'VENDIDO':a.estado==='senado'?'SEÑADO':a.condicion;
@@ -1311,7 +1313,7 @@ function verFicha(id){
     </div>
     ${valH}
     ${ventaBox}
-    <div class="btns" style="margin-top:14px">${copyBtn}<button class="bout" onclick="cerrar('ov-ficha')">Cerrar</button></div>
+    <div class="btns" style="margin-top:14px">${shareBtn}${copyBtn}<button class="bout" onclick="cerrar('ov-ficha')">Cerrar</button></div>
   `;
   document.getElementById('ov-ficha').classList.add('on');
 }
@@ -1402,21 +1404,73 @@ function consultarWA(id){
   window.open('https://wa.me/'+WHATSAPP_NUMERO+'?text='+encodeURIComponent(txt),'_blank');
 }
 
-function cerrar(id){document.getElementById(id).classList.remove('on');}
+function getVehiculoURL(id){
+  const url=new URL(window.location.href);
+  url.search='';url.hash='';
+  url.searchParams.set('vehiculo',id);
+  return url.toString();
+}
+function copiarTexto(texto){
+  if(navigator.clipboard?.writeText)return navigator.clipboard.writeText(texto);
+  const t=document.createElement('textarea');t.value=texto;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();
+  return Promise.resolve();
+}
+async function compartirVehiculo(id){
+  const a=autos.find(x=>x.id===id);if(!a)return;
+  const url=getVehiculoURL(id);
+  const partes=[
+    `${a.marca||''} ${a.modelo||''}${a.anio?' '+a.anio:''}`.trim(),
+    a.km?`Kilómetros: ${a.km} km`:'',
+    a.estado==='vendido'?'Estado: Vendido':a.estado==='senado'?'Estado: Señado':a.condicion?`Condición: ${a.condicion}`:'',
+    a.precio?`Precio: ${formatPrecio(a.precio)}`:'',
+    'Playa 4H',
+    url
+  ].filter(Boolean);
+  const texto=partes.join('\n');
+  try{
+    if(navigator.share)await navigator.share({title:`${a.marca||''} ${a.modelo||''}`.trim()||'Vehículo Playa 4H',text:texto,url});
+    else await copiarTexto(texto);
+    showToast('Enlace del vehículo copiado');
+  }catch(e){
+    if(e?.name==='AbortError')return;
+    await copiarTexto(texto);
+    showToast('Enlace del vehículo copiado');
+  }
+}
+function abrirVehiculoDesdeURL(){
+  const id=new URLSearchParams(window.location.search).get('vehiculo');
+  if(!id)return;
+  if(autos.some(a=>a.id===id))verFicha(id,true);
+}
+function limpiarURLVehiculo(){
+  if(!window.history?.replaceState)return;
+  const url=new URL(window.location.href);
+  url.search='';url.hash='';
+  window.history.replaceState(null,'',url.toString());
+}
+function cerrar(id){
+  document.getElementById(id).classList.remove('on');
+  if(id==='ov-ficha'&&fichaDesdeDeepLink){
+    fichaDesdeDeepLink=false;
+    limpiarURLVehiculo();
+    goSec('inicio',document.querySelector('.nav-links .nb'));
+    window.scrollTo(0,0);
+  }
+}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2600);}
 
-document.querySelectorAll('.ov,.foto-full-ov').forEach(ov=>ov.addEventListener('click',e=>{if(e.target===ov)ov.classList.remove('on');}));
+document.querySelectorAll('.ov,.foto-full-ov').forEach(ov=>ov.addEventListener('click',e=>{if(e.target===ov)cerrar(ov.id);}));
 
 window.goSec=goSec;window.abrirLogin=abrirLogin;window.doLogin=doLogin;window.salirAdmin=salirAdmin;
 window.abrirForm=abrirForm;window.guardarAuto=guardarAuto;window.eliminarAuto=eliminarAuto;
 window.verFicha=verFicha;window.toggleVendido=toggleVendido;window.guardarDatosVenta=guardarDatosVenta;
 window.abrirFormEntrega=abrirFormEntrega;window.guardarEntrega=guardarEntrega;window.eliminarEntrega=eliminarEntrega;window.verEntrega=verEntrega;
 window.cerrar=cerrar;window.cambiarFoto=cambiarFoto;window.verFotoFull=verFotoFull;window.navegarFoto=navegarFoto;
-window.copiarWA=copiarWA;window.consultarWA=consultarWA;window.filtrar=filtrar;window.limpiarFil=limpiarFil;window.renderVentas=renderVentas;window.limpiarVF=limpiarVF;window.renderDestacados=renderDestacados;
+window.copiarWA=copiarWA;window.consultarWA=consultarWA;window.getVehiculoURL=getVehiculoURL;window.compartirVehiculo=compartirVehiculo;window.filtrar=filtrar;window.limpiarFil=limpiarFil;window.renderVentas=renderVentas;window.limpiarVF=limpiarVF;window.renderDestacados=renderDestacados;
 window.renderFinanzas=renderFinanzas;window.limpiarFiltrosFinanzas=limpiarFiltrosFinanzas;window.verFinanzas=verFinanzas;window.guardarCompraFinanciera=guardarCompraFinanciera;window.agregarGastoFinanciero=agregarGastoFinanciero;window.eliminarGastoFinanciero=eliminarGastoFinanciero;window.guardarComisionesFinancieras=guardarComisionesFinancieras;window.guardarVentaFinanciera=guardarVentaFinanciera;window.restablecerVentaFinanciera=restablecerVentaFinanciera;
 
 showToast('Cargando catálogo...');
-cargar();
+cargar().then(abrirVehiculoDesdeURL);
 </script>
 </body>
 </html>
