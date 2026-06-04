@@ -43,7 +43,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .nb-admin-only{display:none;}
 .nb-finanzas-only{display:none;}
 .sec{display:none;}.sec.on{display:block;}
-.hero{background:linear-gradient(135deg,#f4ead8 0%,#fff8ec 48%,#d8c7ad 100%);color:#10243a;padding:3.4rem 1.5rem 3rem;position:relative;overflow:hidden;border-bottom:1px solid rgba(16,36,58,0.12);}
+.hero{background:linear-gradient(135deg,#f4ead8 0%,#fff8ec 48%,#d8c7ad 100%);color:#10243a;padding:2.8rem 1.5rem 2.5rem;position:relative;overflow:hidden;border-bottom:1px solid rgba(16,36,58,0.12);}
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 80% 18%,rgba(204,26,26,0.14),transparent 26%),linear-gradient(120deg,rgba(255,255,255,0.65),transparent 45%);pointer-events:none;}
 .hero-inner{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:50fr 50fr;gap:32px;align-items:center;position:relative;z-index:1;}
 .hero-copy{text-align:left;}
@@ -51,18 +51,18 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .hero h1{font-family:"Arial Narrow",'Barlow Condensed','Segoe UI Condensed',sans-serif;font-size:clamp(3rem,7vw,5.7rem);font-weight:900;color:#10243a;letter-spacing:3.2px;line-height:0.88;font-stretch:condensed;}
 .hero h1 span{color:var(--rojo);}
 .hero-sub{font-family:"Arial Narrow",'Barlow Condensed','Segoe UI Condensed',sans-serif;font-size:clamp(1.42rem,2.8vw,2.18rem);font-weight:800;color:#203c5c;letter-spacing:1.2px;line-height:0.98;text-transform:uppercase;margin-top:9px;}
-.hero-desc{font-size:16px;color:#4b5661;max-width:510px;margin-top:16px;line-height:1.65;}
-.hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px;}
+.hero-desc{font-size:15px;color:#4b5661;max-width:500px;margin-top:13px;line-height:1.55;}
+.hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
 .hero-cta,.hero-secondary{border:none;padding:12px 24px;border-radius:6px;font-weight:900;font-size:13px;cursor:pointer;letter-spacing:1px;text-transform:uppercase;transition:transform 0.15s,box-shadow 0.15s;}
 .hero-cta{background:var(--rojo);color:#fff;box-shadow:0 10px 24px rgba(204,26,26,0.24);}
 .hero-secondary{background:#10243a;color:#fff;}
 .hero-cta:hover,.hero-secondary:hover{transform:translateY(-2px);}
-.hero-stats{display:grid;grid-template-columns:repeat(2,minmax(132px,178px));gap:11px;margin-top:22px;}
-.hero-stat{background:rgba(255,255,255,0.52);border:1px solid rgba(16,36,58,0.11);border-radius:16px;padding:12px 15px;box-shadow:0 8px 22px rgba(16,36,58,0.055),inset 0 1px 0 rgba(255,255,255,0.65);}
+.hero-stats{display:grid;grid-template-columns:repeat(2,minmax(108px,148px));gap:9px;margin-top:17px;}
+.hero-stat{background:rgba(255,255,255,0.5);border:1px solid rgba(16,36,58,0.1);border-radius:14px;padding:10px 13px;box-shadow:0 6px 18px rgba(16,36,58,0.045),inset 0 1px 0 rgba(255,255,255,0.62);}
 .hero-stat-n{font-family:"Arial Narrow",'Barlow Condensed','Segoe UI Condensed',sans-serif;font-size:2rem;font-weight:900;color:#10243a;line-height:0.92;letter-spacing:0.5px;}
-.hero-stat-l{font-size:9.5px;color:#5d6974;text-transform:uppercase;letter-spacing:1.15px;margin-top:6px;font-weight:700;line-height:1.25;}
-.hero-benefits{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;}
-.hero-benefits span{background:rgba(16,36,58,0.08);border:1px solid rgba(16,36,58,0.1);color:#203c5c;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700;}
+.hero-stat-l{font-size:9.5px;color:#5d6974;text-transform:uppercase;letter-spacing:1px;margin-top:5px;font-weight:700;line-height:1.2;}
+.hero-benefits{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 14px;max-width:430px;margin-top:12px;}
+.hero-benefits span{color:#203c5c;font-size:12.5px;font-weight:700;line-height:1.25;}
 .hero-showroom{position:relative;border-radius:24px;overflow:hidden;box-shadow:0 26px 64px rgba(16,36,58,0.2);border:1px solid rgba(255,255,255,0.68);background:rgba(255,255,255,0.38);}
 .hero-showroom img{display:block;width:100%;aspect-ratio:1.12/1;object-fit:cover;border-radius:24px;}
 .wrap{padding:1.5rem 1.25rem;max-width:1100px;margin:0 auto;}
@@ -225,11 +225,12 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
   .nb.on{background:var(--rojo);color:#fff;box-shadow:0 4px 12px rgba(204,26,26,0.26);}
   .nb.adm{font-size:9.5px;color:#747b84;background:rgba(255,255,255,0.02);opacity:0.72;}
   .nb.adm-out{font-size:9.5px;color:#9a6666;background:rgba(224,59,59,0.06);opacity:0.78;}
-  .hero{padding:2.1rem 1rem 2.3rem;}
+  .hero{padding:1.8rem 1rem 2rem;}
   .hero-copy{text-align:left;}
   .hero h1{letter-spacing:2px;line-height:0.9;}
   .hero-actions{flex-direction:column;}
   .hero-cta,.hero-secondary{width:100%;}
+  .hero-benefits{grid-template-columns:1fr;gap:5px;margin-top:10px;}
   .hero-stats{grid-template-columns:1fr 1fr;}
   .hero-stat{padding:11px 12px;border-radius:14px;}
   .hero-stat-n{font-size:1.85rem;}
@@ -274,16 +275,16 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
         <div class="hero-kicker">Catálogo de vehículos</div>
         <h1>PLAYA <span>4H</span></h1>
         <div class="hero-sub">Catálogo de Vehículos</div>
-        <div class="hero-desc">Vehículos seleccionados para quienes buscan comprar con mayor tranquilidad.</div>
+        <div class="hero-desc">Explora vehículos disponibles, conoce su información y encuentra la opción que mejor se adapta a vos.</div>
+        <div class="hero-benefits"><span>✓ Vehículos disponibles</span><span>✓ Fotos reales</span><span>✓ Consulta directa</span><span>✓ Inventario actualizado</span></div>
         <div class="hero-actions">
           <button class="hero-cta" onclick="goSec('catalogo',document.getElementById('nb-disp'))">Ver catálogo</button>
           <button class="hero-secondary" onclick="goSec('vendidos',document.getElementById('nb-vend'))">Ver vendidos</button>
         </div>
         <div class="hero-stats">
-          <div class="hero-stat"><div class="hero-stat-n" id="st-d">0</div><div class="hero-stat-l">vehículos disponibles</div></div>
-          <div class="hero-stat"><div class="hero-stat-n" id="st-v">0</div><div class="hero-stat-l">vendidos recientemente</div></div>
+          <div class="hero-stat"><div class="hero-stat-n" id="st-d">0</div><div class="hero-stat-l">Disponibles</div></div>
+          <div class="hero-stat"><div class="hero-stat-n" id="st-v">0</div><div class="hero-stat-l">Vendidos</div></div>
         </div>
-        <div class="hero-benefits"><span>✓ Fotos reales</span><span>✓ Consulta directa</span><span>✓ Inventario actualizado</span></div>
       </div>
       <div class="hero-showroom">
         <img src="assets/hero-playa4h-v2.png" alt="Playa 4H - Catálogo de vehículos">
