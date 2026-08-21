@@ -46,10 +46,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 80% 18%,rgba(204,26,26,0.14),transparent 26%),linear-gradient(120deg,rgba(255,255,255,0.65),transparent 45%);pointer-events:none;}
 .hero-inner{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:50fr 50fr;gap:32px;align-items:center;position:relative;z-index:1;}
 .hero-copy{text-align:left;}
-.hero-kicker{font-size:11px;color:#8b1b1b;text-transform:uppercase;letter-spacing:3px;font-weight:900;margin-bottom:8px;}
-.hero h1{font-family:"Arial Narrow",'Barlow Condensed','Segoe UI Condensed',sans-serif;font-size:clamp(3rem,7vw,5.7rem);font-weight:900;color:#10243a;letter-spacing:3.2px;line-height:0.88;font-stretch:condensed;}
-.hero h1 span{color:var(--rojo);}
-.hero-sub{font-family:"Arial Narrow",'Barlow Condensed','Segoe UI Condensed',sans-serif;font-size:clamp(1.42rem,2.8vw,2.18rem);font-weight:800;color:#203c5c;letter-spacing:1.2px;line-height:0.98;text-transform:uppercase;margin-top:9px;}
+.hero-logo{display:block;width:auto;max-width:min(100%,520px);height:auto;object-fit:contain;margin:0 0 18px;}
 .hero-desc{font-size:15px;color:#4b5661;max-width:500px;margin-top:13px;line-height:1.55;}
 .hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
 .hero-cta,.hero-secondary{border:none;padding:12px 24px;border-radius:6px;font-weight:900;font-size:13px;cursor:pointer;letter-spacing:1px;text-transform:uppercase;transition:transform 0.15s,box-shadow 0.15s;}
@@ -232,7 +229,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
   .nb.adm-out{font-size:9px;color:#9a6666;background:rgba(224,59,59,0.05);opacity:0.68;}
   .hero{padding:1.8rem 1rem 2rem;}
   .hero-copy{text-align:left;}
-  .hero h1{letter-spacing:2px;line-height:0.9;}
+  .hero-logo{width:100%;max-width:420px;margin:0 auto 18px;}
   .hero-actions{flex-direction:column;}
   .hero-cta,.hero-secondary{width:100%;}
   .hero-benefits{grid-template-columns:1fr;gap:5px;margin-top:10px;}
@@ -280,9 +277,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
   <div class="hero">
     <div class="hero-inner">
       <div class="hero-copy">
-        <div class="hero-kicker">Catálogo de vehículos</div>
-        <h1>PLAYA <span>4H</span></h1>
-        <div class="hero-sub">Catálogo de Vehículos</div>
+        <img class="hero-logo" src="assets/logo-car-home-eas-v4-transparente.png" alt="Car Home EAS - Catálogo de vehículos">
         <div class="hero-desc">Explora vehículos disponibles, conoce su información y encuentra la opción que mejor se adapta a vos.</div>
         <div class="hero-benefits"><span>✓ Vehículos disponibles</span><span>✓ Fotos reales</span><span>✓ Consulta directa</span><span>✓ Inventario actualizado</span></div>
         <div class="hero-actions">
