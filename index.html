@@ -215,6 +215,8 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .foto-local-action.delete{color:#e03b3b;border-color:#3a1515;}
 .foto-local-action:disabled{opacity:0.3;cursor:not-allowed;}
 .fotos-local-empty{margin-top:12px;padding:18px;border:1px dashed var(--borde);border-radius:8px;color:var(--apagado);font-size:12px;text-align:center;}
+.fm-guardar-estado{min-height:18px;margin-top:12px;color:var(--dorado);font-size:12px;text-align:right;}
+.fm-guardar-estado.error{color:#e03b3b;}
 .btns{display:flex;gap:8px;flex-wrap:wrap;}
 .bwa{flex:1;background:#25d366;color:#fff;border:none;padding:10px;border-radius:4px;font-weight:700;cursor:pointer;font-size:12px;}
 .bwa:hover{background:#1ebe5d;}
@@ -489,7 +491,8 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
         </div>
       </div>
     </div>
-    <div class="ff"><button class="bout" onclick="cerrar('ov-form')">Cancelar</button><button class="brojo" onclick="guardarAuto()">Guardar</button></div>
+    <div class="fm-guardar-estado" id="fm-guardar-estado" role="status" aria-live="polite"></div>
+    <div class="ff"><button class="bout" id="fm-cancelar" onclick="cerrar('ov-form')">Cancelar</button><button class="brojo" id="fm-guardar" onclick="guardarAuto()">Guardar</button></div>
   </div>
 </div>
 
@@ -539,6 +542,7 @@ const WHATSAPP_NUMERO = "595986147136";
 const CLOUDINARY_SIGN_URL = "http://127.0.0.1:8787/cloudinary/sign-upload";
 let autos=[],entregas=[],finanzas=[],isAdmin=false,currentUser=null,currentRole=null,isSuperAdmin=false,isOwner=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false,fichaDesdeDeepLink=false;
 let fotosLocales=[],fotoLocalArrastrada=null;
+let guardandoAuto=false;
 
 async function cargar(){
   try{const s=await getDoc(DOC);if(s.exists()){const d=s.data();autos=d.autos||[];entregas=d.entregas||[];}cargaOk=true;}catch(e){console.error(e);alert('No se pudo cargar el catálogo. Los guardados quedan bloqueados para proteger los datos. Revisá tu conexión e intentá recargar la página.');}
@@ -1259,6 +1263,7 @@ onAuthStateChanged(auth,actualizarSesionAdmin);
 async function abrirForm(id){
   if(!requireSuperAdmin())return;
   limpiarFotosLocales();
+  actualizarEstadoGuardado('');
   const a=id?autos.find(x=>x.id===id):null;
   let fechaIngreso=a?.fechaIngreso||'';
   let comisionVenta=0;
@@ -1396,7 +1401,7 @@ async function subirFotoCloudinary(file,config,upload,fetchImpl=fetch){
   if(!resultadoValido)throw new Error('cloudinary_upload_failed');
   return {publicId:data.public_id,secureUrl:data.secure_url,width:data.width,height:data.height,format:data.format,bytes:data.bytes};
 }
-async function subirLoteCloudinary(fotos=fotosLocales,fetchImpl=fetch){
+async function subirLoteCloudinary(fotos=fotosLocales,fetchImpl=fetch,onProgress=()=>{}){
   const lote=Array.from(fotos||[]);
   let batchId=null;
   const uploaded=[];
@@ -1407,6 +1412,7 @@ async function subirLoteCloudinary(fotos=fotosLocales,fetchImpl=fetch){
     const firma=await solicitarFirmaCloudinary(lote.length,batchId,fetchImpl);
     for(let indice=0;indice<lote.length;indice++){
       try{
+        onProgress(indice+1,lote.length);
         const subida=await subirFotoCloudinary(lote[indice].file,firma,firma.uploads[indice],fetchImpl);
         uploaded.push({orden:indice+1,portada:indice===0,...subida});
       }catch(error){
@@ -1419,10 +1425,79 @@ async function subirLoteCloudinary(fotos=fotosLocales,fetchImpl=fetch){
   }
 }
 
+function actualizarEstadoGuardado(mensaje,error=false){
+  const estado=document.getElementById('fm-guardar-estado');
+  if(!estado)return;
+  estado.textContent=mensaje;estado.classList.toggle('error',error);
+}
+function setGuardandoAuto(activo){
+  guardandoAuto=activo;
+  const guardar=document.getElementById('fm-guardar');if(guardar)guardar.disabled=activo;
+  const cancelar=document.getElementById('fm-cancelar');if(cancelar)cancelar.disabled=activo;
+}
+async function rollbackCloudinary(batchId,publicIds,fetchImpl=fetch){
+  const ids=Array.from(publicIds||[]);
+  const publicIdPattern=/^catalogo-vehiculos\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
+  if(!currentUser||typeof batchId!=='string'||!/^[A-Za-z0-9_-]{8,80}$/.test(batchId)||ids.length<1||ids.length>10||!ids.every(id=>publicIdPattern.test(id))){
+    return {ok:false,pending:ids,error:'invalid_rollback_request'};
+  }
+  try{
+    const idToken=await currentUser.getIdToken();
+    const response=await fetchImpl('http://127.0.0.1:8787/cloudinary/rollback',{
+      method:'POST',
+      headers:{'Authorization':`Bearer ${idToken}`,'Content-Type':'application/json'},
+      body:JSON.stringify({batchId,publicIds:ids}),
+    });
+    let data=null;
+    try{data=await response.json();}catch{}
+    if(response.ok&&data?.ok&&Array.isArray(data.failed)&&data.failed.length===0)return {ok:true,pending:[]};
+    const pendientes=Array.isArray(data?.failed)&&data.failed.length&&data.failed.every(id=>ids.includes(id))?data.failed:ids;
+    return {ok:false,pending:pendientes,error:'cloudinary_rollback_failed'};
+  }catch{
+    return {ok:false,pending:ids,error:'cloudinary_rollback_failed'};
+  }
+}
+async function rollbackResultadoSubida(batchId,imagenes,fetchImpl=fetch){
+  const publicIds=imagenes.map(imagen=>imagen.publicId);
+  if(!publicIds.length)return {ok:true,pending:[]};
+  return rollbackCloudinary(batchId,publicIds,fetchImpl);
+}
+async function guardarAltaNuevaConCloudinary(data,fechaIngreso,comisionVenta,{fetchImpl=fetch,guardarAltaImpl=guardarAltaConFinanzas}={}){
+  const fotosSeleccionadas=[...fotosLocales];
+  if(fotosSeleccionadas.length<1||fotosSeleccionadas.length>10)return {ok:false,error:'invalid_photo_count',rollback:null};
+  const subida=await subirLoteCloudinary(fotosSeleccionadas,fetchImpl,(actual,total)=>actualizarEstadoGuardado(`Subiendo fotos ${actual}/${total}...`));
+  if(!subida.ok){
+    const rollback=subida.uploaded.length?await rollbackResultadoSubida(subida.batchId,subida.uploaded,fetchImpl):null;
+    return {ok:false,error:subida.error||'cloudinary_upload_failed',rollback};
+  }
+  const imagenes=subida.images.map(imagen=>({...imagen}));
+  const dataConImagenes={...data,foto:imagenes[0].secureUrl,fotos:imagenes.slice(1).map(imagen=>imagen.secureUrl).join('\n'),imagenes};
+  const autosAnteriores=autos;
+  autos=[dataConImagenes,...autos];
+  actualizarEstadoGuardado('Guardando vehículo...');
+  let guardado=false;
+  try{guardado=await guardarAltaImpl(dataConImagenes,fechaIngreso,comisionVenta);}catch{}
+  if(!guardado){
+    autos=autosAnteriores;
+    const rollback=await rollbackResultadoSubida(subida.batchId,imagenes,fetchImpl);
+    return {ok:false,error:'vehicle_save_failed',rollback};
+  }
+  return {ok:true,data:dataConImagenes};
+}
+function mensajeFalloAlta(resultado){
+  if(resultado.rollback&&!resultado.rollback.ok){
+    const pendientes=resultado.rollback.pending||[];
+    return `No se guardó el vehículo. Quedaron ${pendientes.length} imágenes pendientes de limpieza:\n${pendientes.join('\n')}`;
+  }
+  if(resultado.error==='invalid_photo_count')return 'Seleccioná entre 1 y 10 fotos antes de guardar.';
+  return 'No se guardó el vehículo. Las fotos subidas fueron limpiadas y podés reintentar.';
+}
+
 document.getElementById('fotos-local-input').addEventListener('change',seleccionarFotosLocales);
 
 async function guardarAuto(){
   if(!requireSuperAdmin())return;
+  if(guardandoAuto)return;
   const marca=document.getElementById('fm-marca').value.trim();
   const modelo=document.getElementById('fm-modelo').value.trim();
   if(!marca||!modelo){showToast('⚠ Marca y modelo obligatorios');return;}
@@ -1448,11 +1523,21 @@ async function guardarAuto(){
     fotos:document.getElementById('fm-fotos').value.trim(),
     venta:vantaActual,
   };
-  const autosAnteriores=autos;
-  autos=editId?autos.map(a=>a.id===editId?data:a):[data,...autos];
-  if(!await(editId?guardarEdicionConFinanzas(data,fechaIngreso,comisionVenta):guardarAltaConFinanzas(data,fechaIngreso,comisionVenta))){autos=autosAnteriores;return;}
-  cerrar('ov-form');render();
-  showToast(editId?'✓ Actualizado':'✓ Vehículo agregado');
+  if(editId){
+    const autosAnteriores=autos;
+    autos=autos.map(a=>a.id===editId?data:a);
+    if(!await guardarEdicionConFinanzas(data,fechaIngreso,comisionVenta)){autos=autosAnteriores;return;}
+    cerrar('ov-form');render();showToast('✓ Actualizado');return;
+  }
+  if(fotosLocales.length<1||fotosLocales.length>10){showToast('⚠ Seleccioná entre 1 y 10 fotos');return;}
+  setGuardandoAuto(true);actualizarEstadoGuardado('Preparando fotos...');
+  let resultado;
+  try{resultado=await guardarAltaNuevaConCloudinary(data,fechaIngreso,comisionVenta);}
+  catch{resultado={ok:false,error:'vehicle_creation_failed',rollback:null};}
+  if(!resultado.ok){
+    const mensaje=mensajeFalloAlta(resultado);actualizarEstadoGuardado(mensaje,true);alert(mensaje);setGuardandoAuto(false);return;
+  }
+  setGuardandoAuto(false);cerrar('ov-form');render();showToast('✓ Vehículo agregado');
 }
 
 async function eliminarAuto(id){if(!requireSuperAdmin())return;if(!confirm('¿Eliminar?'))return;const autosAnteriores=autos;autos=autos.filter(a=>a.id!==id);if(!await guardar()){autos=autosAnteriores;return;}render();showToast('Eliminado');}
@@ -1657,6 +1742,7 @@ function limpiarURLVehiculo(){
   window.history.replaceState(null,'',url.toString());
 }
 function cerrar(id){
+  if(id==='ov-form'&&guardandoAuto)return;
   document.getElementById(id).classList.remove('on');
   if(id==='ov-form')limpiarFotosLocales();
   if(id==='ov-ficha'&&fichaDesdeDeepLink){
