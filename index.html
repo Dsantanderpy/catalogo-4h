@@ -1496,6 +1496,11 @@ function mensajeFalloAlta(resultado){
 
 document.getElementById('fotos-local-input').addEventListener('change',seleccionarFotosLocales);
 
+function protegerFotosEdicion(data,original){
+  if(!original||!Array.isArray(original.imagenes)||original.imagenes.length===0)return data;
+  return {...data,foto:original.foto,fotos:original.fotos,imagenes:original.imagenes.map(imagen=>({...imagen}))};
+}
+
 async function guardarAuto(){
   if(!requireSuperAdmin())return;
   if(guardandoAuto)return;
@@ -1506,7 +1511,7 @@ async function guardarAuto(){
   const vantaActual=autoActual?.venta||null;
   const fechaIngreso=document.getElementById('fm-fecha-ingreso').value;
   const comisionVenta=enteroNoNegativo(document.getElementById('fm-comision-venta').value,'La comisión de venta');if(comisionVenta===null)return;
-  const data={
+  const data=protegerFotosEdicion({
     id:editId||Date.now().toString(),marca,modelo,
     anio:document.getElementById('fm-anio').value.trim(),
     km:document.getElementById('fm-km').value.trim(),
@@ -1523,7 +1528,7 @@ async function guardarAuto(){
     foto:document.getElementById('fm-foto').value.trim(),
     fotos:document.getElementById('fm-fotos').value.trim(),
     venta:vantaActual,
-  };
+  },autoActual);
   if(editId){
     const autosAnteriores=autos;
     autos=autos.map(a=>a.id===editId?data:a);
