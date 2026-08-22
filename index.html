@@ -1368,22 +1368,30 @@ async function solicitarFirmaCloudinary(count,batchId=crearBatchIdCloudinary(),f
   let data=null;
   try{data=await response.json();}catch{}
   if(!response.ok||!data?.ok)throw new Error('sign_upload_failed');
-  const firmaValida=data.batchId===batchId&&typeof data.cloudName==='string'&&data.cloudName&&typeof data.apiKey==='string'&&data.apiKey&&Number.isInteger(data.timestamp)&&typeof data.signature==='string'&&data.signature&&typeof data.folder==='string'&&data.folder;
-  if(!firmaValida)throw new Error('invalid_sign_upload_response');
-  return {batchId,cloudName:data.cloudName,apiKey:data.apiKey,timestamp:data.timestamp,signature:data.signature,folder:data.folder};
+  const cabeceraValida=data.batchId===batchId&&typeof data.cloudName==='string'&&data.cloudName&&typeof data.apiKey==='string'&&data.apiKey&&Array.isArray(data.uploads)&&data.uploads.length===count;
+  if(!cabeceraValida)throw new Error('invalid_sign_upload_response');
+  const publicIdPattern=/^catalogo-vehiculos\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
+  const uploads=data.uploads.map((upload,indice)=>{
+    const uploadValido=upload&&upload.orden===indice+1&&publicIdPattern.test(upload.publicId)&&Number.isInteger(upload.timestamp)&&upload.timestamp>0&&typeof upload.signature==='string'&&upload.signature&&upload.folder==='catalogo-vehiculos';
+    if(!uploadValido)throw new Error('invalid_sign_upload_response');
+    return {orden:upload.orden,publicId:upload.publicId,timestamp:upload.timestamp,signature:upload.signature,folder:upload.folder};
+  });
+  return {batchId,cloudName:data.cloudName,apiKey:data.apiKey,uploads};
 }
-async function subirFotoCloudinary(file,firma,fetchImpl=fetch){
+async function subirFotoCloudinary(file,config,upload,fetchImpl=fetch){
   if(!(file instanceof File))throw new Error('invalid_photo_file');
   const form=new FormData();
   form.append('file',file);
-  form.append('api_key',firma.apiKey);
-  form.append('timestamp',String(firma.timestamp));
-  form.append('signature',firma.signature);
-  form.append('folder',firma.folder);
-  const endpoint=`https://api.cloudinary.com/v1_1/${encodeURIComponent(firma.cloudName)}/image/upload`;
+  form.append('api_key',config.apiKey);
+  form.append('timestamp',String(upload.timestamp));
+  form.append('signature',upload.signature);
+  form.append('folder',upload.folder);
+  form.append('public_id',upload.publicId);
+  const endpoint=`https://api.cloudinary.com/v1_1/${encodeURIComponent(config.cloudName)}/image/upload`;
   const response=await fetchImpl(endpoint,{method:'POST',body:form});
   let data=null;
   try{data=await response.json();}catch{}
+  if(response.ok&&typeof data?.public_id==='string'&&data.public_id!==upload.publicId)throw new Error('unexpected_cloudinary_public_id');
   const resultadoValido=response.ok&&typeof data?.public_id==='string'&&data.public_id&&typeof data.secure_url==='string'&&data.secure_url&&Number.isFinite(data.width)&&Number.isFinite(data.height)&&typeof data.format==='string'&&data.format&&Number.isFinite(data.bytes);
   if(!resultadoValido)throw new Error('cloudinary_upload_failed');
   return {publicId:data.public_id,secureUrl:data.secure_url,width:data.width,height:data.height,format:data.format,bytes:data.bytes};
@@ -1399,7 +1407,7 @@ async function subirLoteCloudinary(fotos=fotosLocales,fetchImpl=fetch){
     const firma=await solicitarFirmaCloudinary(lote.length,batchId,fetchImpl);
     for(let indice=0;indice<lote.length;indice++){
       try{
-        const subida=await subirFotoCloudinary(lote[indice].file,firma,fetchImpl);
+        const subida=await subirFotoCloudinary(lote[indice].file,firma,firma.uploads[indice],fetchImpl);
         uploaded.push({orden:indice+1,portada:indice===0,...subida});
       }catch(error){
         return {ok:false,batchId,uploaded:[...uploaded],failedIndex:indice,error:error?.message||'cloudinary_upload_failed'};
