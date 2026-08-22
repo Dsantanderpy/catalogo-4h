@@ -193,6 +193,28 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 /* Sección form con fondo agrupado */
 .fg-section{background:var(--negro);border:1px solid var(--borde);border-radius:8px;padding:14px;margin-bottom:10px;}
 .fg-section-title{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--apagado);margin-bottom:10px;font-weight:700;}
+.fotos-local-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
+.fotos-local-head .fg-section-title{margin-bottom:0;}
+.fotos-local-count{font-size:11px;color:var(--apagado);font-weight:700;white-space:nowrap;}
+.fotos-local-picker{display:inline-block;background:var(--rojo);color:#fff;padding:9px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;transition:background 0.15s;}
+.fotos-local-picker:hover{background:var(--rojo-o);}
+.fotos-local-picker.disabled{background:#3a3a3a;color:#777;cursor:not-allowed;pointer-events:none;}
+.fotos-local-input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;}
+.fotos-local-list{display:grid;gap:8px;margin-top:12px;}
+.foto-local-item{display:grid;grid-template-columns:86px minmax(0,1fr) auto;gap:10px;align-items:center;background:var(--gris2);border:1px solid var(--borde);border-radius:8px;padding:8px;}
+.foto-local-item.dragging{opacity:0.45;}
+.foto-local-item.drag-over{border-color:var(--rojo);}
+.foto-local-preview{width:86px;height:64px;display:block;object-fit:cover;border-radius:5px;background:var(--negro);}
+.foto-local-info{min-width:0;}
+.foto-local-order{font-size:12px;font-weight:700;color:var(--blanco);}
+.foto-local-cover{display:inline-block;margin-left:6px;color:var(--dorado);font-size:9px;letter-spacing:1px;}
+.foto-local-name{font-size:11px;color:var(--apagado);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.foto-local-actions{display:flex;gap:4px;}
+.foto-local-action{background:transparent;border:1px solid var(--borde);color:var(--apagado);min-width:30px;height:30px;border-radius:5px;cursor:pointer;font-size:13px;}
+.foto-local-action:hover:not(:disabled){border-color:#555;color:var(--blanco);}
+.foto-local-action.delete{color:#e03b3b;border-color:#3a1515;}
+.foto-local-action:disabled{opacity:0.3;cursor:not-allowed;}
+.fotos-local-empty{margin-top:12px;padding:18px;border:1px dashed var(--borde);border-radius:8px;color:var(--apagado);font-size:12px;text-align:center;}
 .btns{display:flex;gap:8px;flex-wrap:wrap;}
 .bwa{flex:1;background:#25d366;color:#fff;border:none;padding:10px;border-radius:4px;font-weight:700;cursor:pointer;font-size:12px;}
 .bwa:hover{background:#1ebe5d;}
@@ -455,9 +477,16 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
         <div class="fhint">Cada línea = un punto ✓ en la ficha. Se usa para copiar el texto de WhatsApp.</div>
       </div>
       <div class="fg-section full">
-        <div class="fg-section-title">📷 Fotos</div>
-        <div><div class="fl">Foto de portada — Direct link imgbb.com</div><input class="fi" id="fm-foto" type="url" placeholder="https://i.ibb.co/..."><div class="fhint">Aparece en la tarjeta del catálogo.</div></div>
-        <div style="margin-top:10px"><div class="fl">Fotos adicionales — una URL por línea</div><textarea class="fi" id="fm-fotos" rows="3" placeholder="https://i.ibb.co/foto2.jpg&#10;https://i.ibb.co/foto3.jpg"></textarea></div>
+        <div class="fotos-local-head"><div class="fg-section-title">📷 Fotos del vehículo</div><div class="fotos-local-count" id="fotos-local-count">0 / 10</div></div>
+        <label class="fotos-local-picker" id="fotos-local-picker" for="fotos-local-input">Seleccionar fotos</label>
+        <input class="fotos-local-input" id="fotos-local-input" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple>
+        <div class="fotos-local-empty" id="fotos-local-empty">Todavía no seleccionaste fotos.</div>
+        <div class="fotos-local-list" id="fotos-local-list"></div>
+        <div class="fhint">La foto #1 será la PORTADA. Podés agregar hasta 10 y reordenarlas.</div>
+        <div hidden aria-hidden="true">
+          <input class="fi" id="fm-foto" type="url">
+          <textarea class="fi" id="fm-fotos" rows="3"></textarea>
+        </div>
       </div>
     </div>
     <div class="ff"><button class="bout" onclick="cerrar('ov-form')">Cancelar</button><button class="brojo" onclick="guardarAuto()">Guardar</button></div>
@@ -507,7 +536,9 @@ const auth = getAuth(app);
 const DOC = doc(db,"catalogo","datos");
 
 const WHATSAPP_NUMERO = "595986147136";
+const CLOUDINARY_SIGN_URL = "http://127.0.0.1:8787/cloudinary/sign-upload";
 let autos=[],entregas=[],finanzas=[],isAdmin=false,currentUser=null,currentRole=null,isSuperAdmin=false,isOwner=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false,fichaDesdeDeepLink=false;
+let fotosLocales=[],fotoLocalArrastrada=null;
 
 async function cargar(){
   try{const s=await getDoc(DOC);if(s.exists()){const d=s.data();autos=d.autos||[];entregas=d.entregas||[];}cargaOk=true;}catch(e){console.error(e);alert('No se pudo cargar el catálogo. Los guardados quedan bloqueados para proteger los datos. Revisá tu conexión e intentá recargar la página.');}
@@ -1227,6 +1258,7 @@ onAuthStateChanged(auth,actualizarSesionAdmin);
 
 async function abrirForm(id){
   if(!requireSuperAdmin())return;
+  limpiarFotosLocales();
   const a=id?autos.find(x=>x.id===id):null;
   let fechaIngreso=a?.fechaIngreso||'';
   let comisionVenta=0;
@@ -1253,6 +1285,133 @@ async function abrirForm(id){
   document.getElementById('fm-fotos').value=a?.fotos||'';
   document.getElementById('ov-form').classList.add('on');
 }
+
+function renderFotosLocales(){
+  const lista=document.getElementById('fotos-local-list');
+  const vacio=document.getElementById('fotos-local-empty');
+  const contador=document.getElementById('fotos-local-count');
+  const selector=document.getElementById('fotos-local-picker');
+  if(!lista||!vacio||!contador||!selector)return;
+  contador.textContent=`${fotosLocales.length} / 10`;
+  vacio.hidden=fotosLocales.length>0;
+  selector.classList.toggle('disabled',fotosLocales.length>=10);
+  selector.setAttribute('aria-disabled',fotosLocales.length>=10?'true':'false');
+  lista.innerHTML='';
+  fotosLocales.forEach((foto,indice)=>{
+    const item=document.createElement('div');
+    item.className='foto-local-item';item.draggable=true;item.dataset.id=foto.id;
+    item.addEventListener('dragstart',()=>{fotoLocalArrastrada=foto.id;item.classList.add('dragging');});
+    item.addEventListener('dragend',()=>{fotoLocalArrastrada=null;item.classList.remove('dragging');document.querySelectorAll('.foto-local-item').forEach(x=>x.classList.remove('drag-over'));});
+    item.addEventListener('dragover',evento=>{evento.preventDefault();if(fotoLocalArrastrada!==foto.id)item.classList.add('drag-over');});
+    item.addEventListener('dragleave',()=>item.classList.remove('drag-over'));
+    item.addEventListener('drop',evento=>{evento.preventDefault();item.classList.remove('drag-over');reordenarFotoLocal(fotoLocalArrastrada,foto.id);});
+    const preview=document.createElement('img');preview.className='foto-local-preview';preview.src=foto.url;preview.alt=`Foto ${indice+1}`;
+    const info=document.createElement('div');info.className='foto-local-info';
+    const orden=document.createElement('div');orden.className='foto-local-order';orden.textContent=`#${indice+1}`;
+    if(indice===0){const portada=document.createElement('span');portada.className='foto-local-cover';portada.textContent='PORTADA';orden.appendChild(portada);}
+    const nombre=document.createElement('div');nombre.className='foto-local-name';nombre.textContent=foto.file.name;nombre.title=foto.file.name;
+    info.append(orden,nombre);
+    const acciones=document.createElement('div');acciones.className='foto-local-actions';
+    acciones.append(crearAccionFoto('↑','Mover arriba',indice===0,()=>moverFotoLocal(indice,-1)),crearAccionFoto('↓','Mover abajo',indice===fotosLocales.length-1,()=>moverFotoLocal(indice,1)),crearAccionFoto('×','Eliminar',false,()=>eliminarFotoLocal(foto.id),'delete'));
+    item.append(preview,info,acciones);lista.appendChild(item);
+  });
+}
+function crearAccionFoto(texto,titulo,disabled,accion,clase=''){
+  const boton=document.createElement('button');boton.type='button';boton.className=`foto-local-action ${clase}`.trim();boton.textContent=texto;boton.title=titulo;boton.setAttribute('aria-label',titulo);boton.disabled=disabled;boton.addEventListener('click',accion);return boton;
+}
+function seleccionarFotosLocales(evento){
+  const input=evento.target;
+  const archivos=Array.from(input.files||[]);
+  const disponibles=10-fotosLocales.length;
+  const validos=archivos.filter(file=>['image/jpeg','image/png','image/webp'].includes(file.type));
+  validos.slice(0,disponibles).forEach(file=>fotosLocales.push({id:`${Date.now()}-${Math.random()}`,file,url:URL.createObjectURL(file)}));
+  if(validos.length<archivos.length)showToast('Solo se aceptan fotos JPG, JPEG, PNG o WEBP');
+  else if(archivos.length>disponibles)showToast('Máximo 10 fotos');
+  input.value='';renderFotosLocales();
+}
+function moverFotoLocal(indice,direccion){
+  const destino=indice+direccion;if(destino<0||destino>=fotosLocales.length)return;
+  [fotosLocales[indice],fotosLocales[destino]]=[fotosLocales[destino],fotosLocales[indice]];renderFotosLocales();
+}
+function reordenarFotoLocal(origenId,destinoId){
+  if(!origenId||origenId===destinoId)return;
+  const origen=fotosLocales.findIndex(foto=>foto.id===origenId);const destino=fotosLocales.findIndex(foto=>foto.id===destinoId);
+  if(origen<0||destino<0)return;
+  const [foto]=fotosLocales.splice(origen,1);fotosLocales.splice(destino,0,foto);renderFotosLocales();
+}
+function eliminarFotoLocal(id){
+  const indice=fotosLocales.findIndex(foto=>foto.id===id);if(indice<0)return;
+  URL.revokeObjectURL(fotosLocales[indice].url);fotosLocales.splice(indice,1);renderFotosLocales();
+}
+function limpiarFotosLocales(){
+  fotosLocales.forEach(foto=>URL.revokeObjectURL(foto.url));fotosLocales=[];fotoLocalArrastrada=null;
+  const input=document.getElementById('fotos-local-input');if(input)input.value='';renderFotosLocales();
+}
+
+function crearBatchIdCloudinary(){
+  if(!globalThis.crypto?.randomUUID)throw new Error('secure_batch_id_unavailable');
+  return `batch_${crypto.randomUUID()}`;
+}
+function validarCantidadFotosCloudinary(count){
+  if(!Number.isInteger(count)||count<1||count>10)throw new Error('invalid_photo_count');
+}
+async function solicitarFirmaCloudinary(count,batchId=crearBatchIdCloudinary(),fetchImpl=fetch){
+  validarCantidadFotosCloudinary(count);
+  if(!currentUser)throw new Error('authentication_required');
+  if(typeof batchId!=='string'||!/^[A-Za-z0-9_-]{8,80}$/.test(batchId))throw new Error('invalid_batch_id');
+  const idToken=await currentUser.getIdToken();
+  const response=await fetchImpl(CLOUDINARY_SIGN_URL,{
+    method:'POST',
+    headers:{'Authorization':`Bearer ${idToken}`,'Content-Type':'application/json'},
+    body:JSON.stringify({batchId,count}),
+  });
+  let data=null;
+  try{data=await response.json();}catch{}
+  if(!response.ok||!data?.ok)throw new Error('sign_upload_failed');
+  const firmaValida=data.batchId===batchId&&typeof data.cloudName==='string'&&data.cloudName&&typeof data.apiKey==='string'&&data.apiKey&&Number.isInteger(data.timestamp)&&typeof data.signature==='string'&&data.signature&&typeof data.folder==='string'&&data.folder;
+  if(!firmaValida)throw new Error('invalid_sign_upload_response');
+  return {batchId,cloudName:data.cloudName,apiKey:data.apiKey,timestamp:data.timestamp,signature:data.signature,folder:data.folder};
+}
+async function subirFotoCloudinary(file,firma,fetchImpl=fetch){
+  if(!(file instanceof File))throw new Error('invalid_photo_file');
+  const form=new FormData();
+  form.append('file',file);
+  form.append('api_key',firma.apiKey);
+  form.append('timestamp',String(firma.timestamp));
+  form.append('signature',firma.signature);
+  form.append('folder',firma.folder);
+  const endpoint=`https://api.cloudinary.com/v1_1/${encodeURIComponent(firma.cloudName)}/image/upload`;
+  const response=await fetchImpl(endpoint,{method:'POST',body:form});
+  let data=null;
+  try{data=await response.json();}catch{}
+  const resultadoValido=response.ok&&typeof data?.public_id==='string'&&data.public_id&&typeof data.secure_url==='string'&&data.secure_url&&Number.isFinite(data.width)&&Number.isFinite(data.height)&&typeof data.format==='string'&&data.format&&Number.isFinite(data.bytes);
+  if(!resultadoValido)throw new Error('cloudinary_upload_failed');
+  return {publicId:data.public_id,secureUrl:data.secure_url,width:data.width,height:data.height,format:data.format,bytes:data.bytes};
+}
+async function subirLoteCloudinary(fotos=fotosLocales,fetchImpl=fetch){
+  const lote=Array.from(fotos||[]);
+  let batchId=null;
+  const uploaded=[];
+  try{
+    validarCantidadFotosCloudinary(lote.length);
+    if(!lote.every(foto=>foto?.file instanceof File))throw new Error('invalid_photo_file');
+    batchId=crearBatchIdCloudinary();
+    const firma=await solicitarFirmaCloudinary(lote.length,batchId,fetchImpl);
+    for(let indice=0;indice<lote.length;indice++){
+      try{
+        const subida=await subirFotoCloudinary(lote[indice].file,firma,fetchImpl);
+        uploaded.push({orden:indice+1,portada:indice===0,...subida});
+      }catch(error){
+        return {ok:false,batchId,uploaded:[...uploaded],failedIndex:indice,error:error?.message||'cloudinary_upload_failed'};
+      }
+    }
+    return {ok:true,batchId,images:[...uploaded]};
+  }catch(error){
+    return {ok:false,batchId,uploaded:[...uploaded],failedIndex:uploaded.length,error:error?.message||'cloudinary_batch_failed'};
+  }
+}
+
+document.getElementById('fotos-local-input').addEventListener('change',seleccionarFotosLocales);
 
 async function guardarAuto(){
   if(!requireSuperAdmin())return;
@@ -1491,6 +1650,7 @@ function limpiarURLVehiculo(){
 }
 function cerrar(id){
   document.getElementById(id).classList.remove('on');
+  if(id==='ov-form')limpiarFotosLocales();
   if(id==='ov-ficha'&&fichaDesdeDeepLink){
     fichaDesdeDeepLink=false;
     limpiarURLVehiculo();
