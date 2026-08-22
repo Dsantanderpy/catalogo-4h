@@ -1375,9 +1375,9 @@ async function solicitarFirmaCloudinary(count,batchId=crearBatchIdCloudinary(),f
   if(!response.ok||!data?.ok)throw new Error('sign_upload_failed');
   const cabeceraValida=data.batchId===batchId&&typeof data.cloudName==='string'&&data.cloudName&&typeof data.apiKey==='string'&&data.apiKey&&Array.isArray(data.uploads)&&data.uploads.length===count;
   if(!cabeceraValida)throw new Error('invalid_sign_upload_response');
-  const publicIdPattern=/^catalogo-vehiculos\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
   const uploads=data.uploads.map((upload,indice)=>{
-    const uploadValido=upload&&upload.orden===indice+1&&publicIdPattern.test(upload.publicId)&&Number.isInteger(upload.timestamp)&&upload.timestamp>0&&typeof upload.signature==='string'&&upload.signature&&upload.folder==='catalogo-vehiculos';
+    const publicIdEsperado=`${batchId}_${String(indice+1).padStart(2,'0')}`;
+    const uploadValido=upload&&upload.orden===indice+1&&typeof upload.publicId==='string'&&!upload.publicId.includes('/')&&upload.publicId===publicIdEsperado&&Number.isInteger(upload.timestamp)&&upload.timestamp>0&&typeof upload.signature==='string'&&upload.signature&&upload.folder==='catalogo-vehiculos';
     if(!uploadValido)throw new Error('invalid_sign_upload_response');
     return {orden:upload.orden,publicId:upload.publicId,timestamp:upload.timestamp,signature:upload.signature,folder:upload.folder};
   });
@@ -1396,7 +1396,8 @@ async function subirFotoCloudinary(file,config,upload,fetchImpl=fetch){
   const response=await fetchImpl(endpoint,{method:'POST',body:form});
   let data=null;
   try{data=await response.json();}catch{}
-  if(response.ok&&typeof data?.public_id==='string'&&data.public_id!==upload.publicId)throw new Error('unexpected_cloudinary_public_id');
+  const publicIdEsperado=`${upload.folder}/${upload.publicId}`;
+  if(response.ok&&typeof data?.public_id==='string'&&data.public_id!==publicIdEsperado)throw new Error('unexpected_cloudinary_public_id');
   const resultadoValido=response.ok&&typeof data?.public_id==='string'&&data.public_id&&typeof data.secure_url==='string'&&data.secure_url&&Number.isFinite(data.width)&&Number.isFinite(data.height)&&typeof data.format==='string'&&data.format&&Number.isFinite(data.bytes);
   if(!resultadoValido)throw new Error('cloudinary_upload_failed');
   return {publicId:data.public_id,secureUrl:data.secure_url,width:data.width,height:data.height,format:data.format,bytes:data.bytes};
