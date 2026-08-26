@@ -215,6 +215,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .foto-local-action.delete{color:#e03b3b;border-color:#3a1515;}
 .foto-local-action:disabled{opacity:0.3;cursor:not-allowed;}
 .fotos-local-empty{margin-top:12px;padding:18px;border:1px dashed var(--borde);border-radius:8px;color:var(--apagado);font-size:12px;text-align:center;}
+.fotos-historicas-aviso{padding:12px;border:1px solid var(--borde);border-radius:8px;background:var(--gris2);color:var(--apagado);font-size:12px;}
 .fm-guardar-estado{min-height:18px;margin-top:12px;color:var(--dorado);font-size:12px;text-align:right;}
 .fm-guardar-estado.error{color:#e03b3b;}
 .btns{display:flex;gap:8px;flex-wrap:wrap;}
@@ -479,12 +480,23 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
         <div class="fhint">Cada línea = un punto ✓ en la ficha. Se usa para copiar el texto de WhatsApp.</div>
       </div>
       <div class="fg-section full">
-        <div class="fotos-local-head"><div class="fg-section-title">📷 Fotos del vehículo</div><div class="fotos-local-count" id="fotos-local-count">0 / 10</div></div>
-        <label class="fotos-local-picker" id="fotos-local-picker" for="fotos-local-input">Seleccionar fotos</label>
-        <input class="fotos-local-input" id="fotos-local-input" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple>
-        <div class="fotos-local-empty" id="fotos-local-empty">Todavía no seleccionaste fotos.</div>
-        <div class="fotos-local-list" id="fotos-local-list"></div>
-        <div class="fhint">La foto #1 será la PORTADA. Podés agregar hasta 10 y reordenarlas.</div>
+        <div id="fotos-alta">
+          <div class="fotos-local-head"><div class="fg-section-title">📷 Fotos del vehículo</div><div class="fotos-local-count" id="fotos-local-count">0 / 10</div></div>
+          <label class="fotos-local-picker" id="fotos-local-picker" for="fotos-local-input">Seleccionar fotos</label>
+          <input class="fotos-local-input" id="fotos-local-input" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple>
+          <div class="fotos-local-empty" id="fotos-local-empty">Todavía no seleccionaste fotos.</div>
+          <div class="fotos-local-list" id="fotos-local-list"></div>
+          <div class="fhint">La foto #1 será la PORTADA. Podés agregar hasta 10 y reordenarlas.</div>
+        </div>
+        <div id="fotos-edicion" hidden>
+          <div class="fotos-local-head"><div class="fg-section-title">📷 Fotos del vehículo</div><div class="fotos-local-count" id="imagenes-edicion-count">0 / 10</div></div>
+          <label class="fotos-local-picker" id="imagenes-edicion-picker" for="imagenes-edicion-input">Agregar fotos</label>
+          <input class="fotos-local-input" id="imagenes-edicion-input" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple>
+          <div class="fotos-local-empty" id="imagenes-edicion-empty">Este vehículo no tiene fotos en la edición.</div>
+          <div class="fotos-local-list" id="imagenes-edicion-list"></div>
+          <div class="fhint">Edición visual local. La foto #1 será la PORTADA; los cambios de fotos todavía no se guardan.</div>
+        </div>
+        <div class="fotos-historicas-aviso" id="fotos-historicas" hidden>Este vehículo utiliza el sistema histórico de fotos.</div>
         <div hidden aria-hidden="true">
           <input class="fi" id="fm-foto" type="url">
           <textarea class="fi" id="fm-fotos" rows="3"></textarea>
@@ -542,6 +554,7 @@ const WHATSAPP_NUMERO = "595986147136";
 const CLOUDINARY_SIGN_URL = "http://127.0.0.1:8787/cloudinary/sign-upload";
 let autos=[],entregas=[],finanzas=[],isAdmin=false,currentUser=null,currentRole=null,isSuperAdmin=false,isOwner=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false,fichaDesdeDeepLink=false;
 let fotosLocales=[],fotoLocalArrastrada=null;
+let imagenesEdicion=[],imagenesOriginales=[],modoFotosEdicion=null,imagenEdicionArrastrada=null;
 let guardandoAuto=false;
 
 async function cargar(){
@@ -1288,8 +1301,59 @@ async function abrirForm(id){
   document.getElementById('fm-val').value=a?.validacion||'';
   document.getElementById('fm-foto').value=a?.foto||'';
   document.getElementById('fm-fotos').value=a?.fotos||'';
+  prepararImagenesEdicion(a);
   document.getElementById('ov-form').classList.add('on');
 }
+
+function clonarImagenEdicion(imagen){return imagen&&typeof imagen==='object'?{...imagen}:imagen;}
+function prepararImagenesEdicion(auto){
+  limpiarImagenesEdicion();
+  modoFotosEdicion=!auto?'alta':(Array.isArray(auto.imagenes)&&auto.imagenes.length>0?'administrado':'historico');
+  document.getElementById('fotos-alta').hidden=modoFotosEdicion!=='alta';
+  document.getElementById('fotos-edicion').hidden=modoFotosEdicion!=='administrado';
+  document.getElementById('fotos-historicas').hidden=modoFotosEdicion!=='historico';
+  if(modoFotosEdicion==='administrado'){
+    imagenesOriginales=auto.imagenes.map(clonarImagenEdicion);
+    imagenesEdicion=auto.imagenes.map((imagen,indice)=>({id:`existente-${indice}-${Date.now()}`,tipo:'existente',imagen:clonarImagenEdicion(imagen),url:imagen?.secureUrl||''}));
+  }
+  renderImagenesEdicion();
+}
+
+function renderImagenesEdicion(){
+  const lista=document.getElementById('imagenes-edicion-list'),vacio=document.getElementById('imagenes-edicion-empty');
+  const contador=document.getElementById('imagenes-edicion-count'),selector=document.getElementById('imagenes-edicion-picker');
+  if(!lista||!vacio||!contador||!selector)return;
+  contador.textContent=`${imagenesEdicion.length} / 10`;vacio.hidden=imagenesEdicion.length>0;
+  selector.classList.toggle('disabled',imagenesEdicion.length>=10);selector.setAttribute('aria-disabled',imagenesEdicion.length>=10?'true':'false');lista.innerHTML='';
+  imagenesEdicion.forEach((foto,indice)=>{
+    const item=document.createElement('div');item.className='foto-local-item';item.draggable=true;item.dataset.id=foto.id;
+    item.addEventListener('dragstart',()=>{imagenEdicionArrastrada=foto.id;item.classList.add('dragging');});
+    item.addEventListener('dragend',()=>{imagenEdicionArrastrada=null;item.classList.remove('dragging');document.querySelectorAll('#imagenes-edicion-list .foto-local-item').forEach(x=>x.classList.remove('drag-over'));});
+    item.addEventListener('dragover',evento=>{evento.preventDefault();if(imagenEdicionArrastrada!==foto.id)item.classList.add('drag-over');});
+    item.addEventListener('dragleave',()=>item.classList.remove('drag-over'));
+    item.addEventListener('drop',evento=>{evento.preventDefault();item.classList.remove('drag-over');reordenarImagenEdicion(imagenEdicionArrastrada,foto.id);});
+    const preview=document.createElement('img');preview.className='foto-local-preview';preview.src=foto.url;preview.alt=`Foto ${indice+1}`;
+    const info=document.createElement('div');info.className='foto-local-info';
+    const orden=document.createElement('div');orden.className='foto-local-order';orden.textContent=`#${indice+1}`;
+    if(indice===0){const portada=document.createElement('span');portada.className='foto-local-cover';portada.textContent='PORTADA';orden.appendChild(portada);}
+    const nombre=document.createElement('div');nombre.className='foto-local-name';nombre.textContent=foto.tipo==='nueva'?foto.file.name:'Foto actual';nombre.title=nombre.textContent;info.append(orden,nombre);
+    const acciones=document.createElement('div');acciones.className='foto-local-actions';
+    acciones.append(crearAccionFoto('↑','Mover arriba',indice===0,()=>moverImagenEdicion(indice,-1)),crearAccionFoto('↓','Mover abajo',indice===imagenesEdicion.length-1,()=>moverImagenEdicion(indice,1)),crearAccionFoto('×','Eliminar',false,()=>eliminarImagenEdicion(foto.id),'delete'));
+    item.append(preview,info,acciones);lista.appendChild(item);
+  });
+}
+function seleccionarImagenesEdicion(evento){
+  if(modoFotosEdicion!=='administrado')return;
+  const input=evento.target,archivos=Array.from(input.files||[]),disponibles=10-imagenesEdicion.length;
+  const validos=archivos.filter(file=>['image/jpeg','image/png','image/webp'].includes(file.type));
+  validos.slice(0,disponibles).forEach(file=>imagenesEdicion.push({id:`nueva-${Date.now()}-${Math.random()}`,tipo:'nueva',file,url:URL.createObjectURL(file)}));
+  if(validos.length<archivos.length)showToast('Solo se aceptan fotos JPG, JPEG, PNG o WEBP');else if(archivos.length>disponibles)showToast('Máximo 10 fotos');
+  input.value='';renderImagenesEdicion();
+}
+function moverImagenEdicion(indice,direccion){const destino=indice+direccion;if(destino<0||destino>=imagenesEdicion.length)return;[imagenesEdicion[indice],imagenesEdicion[destino]]=[imagenesEdicion[destino],imagenesEdicion[indice]];renderImagenesEdicion();}
+function reordenarImagenEdicion(origenId,destinoId){if(!origenId||origenId===destinoId)return;const origen=imagenesEdicion.findIndex(f=>f.id===origenId),destino=imagenesEdicion.findIndex(f=>f.id===destinoId);if(origen<0||destino<0)return;const [foto]=imagenesEdicion.splice(origen,1);imagenesEdicion.splice(destino,0,foto);renderImagenesEdicion();}
+function eliminarImagenEdicion(id){const indice=imagenesEdicion.findIndex(f=>f.id===id);if(indice<0)return;const [foto]=imagenesEdicion.splice(indice,1);if(foto.tipo==='nueva')URL.revokeObjectURL(foto.url);renderImagenesEdicion();}
+function limpiarImagenesEdicion(){imagenesEdicion.filter(f=>f.tipo==='nueva').forEach(f=>URL.revokeObjectURL(f.url));imagenesEdicion=[];imagenesOriginales=[];modoFotosEdicion=null;imagenEdicionArrastrada=null;const input=document.getElementById('imagenes-edicion-input');if(input)input.value='';renderImagenesEdicion();}
 
 function renderFotosLocales(){
   const lista=document.getElementById('fotos-local-list');
@@ -1495,6 +1559,7 @@ function mensajeFalloAlta(resultado){
 }
 
 document.getElementById('fotos-local-input').addEventListener('change',seleccionarFotosLocales);
+document.getElementById('imagenes-edicion-input').addEventListener('change',seleccionarImagenesEdicion);
 
 function protegerFotosEdicion(data,original){
   if(!original||!Array.isArray(original.imagenes)||original.imagenes.length===0)return data;
@@ -1750,7 +1815,7 @@ function limpiarURLVehiculo(){
 function cerrar(id){
   if(id==='ov-form'&&guardandoAuto)return;
   document.getElementById(id).classList.remove('on');
-  if(id==='ov-form')limpiarFotosLocales();
+  if(id==='ov-form'){limpiarFotosLocales();limpiarImagenesEdicion();}
   if(id==='ov-ficha'&&fichaDesdeDeepLink){
     fichaDesdeDeepLink=false;
     limpiarURLVehiculo();
