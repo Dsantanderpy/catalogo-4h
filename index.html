@@ -555,6 +555,7 @@ const CLOUDINARY_SIGN_URL = "http://127.0.0.1:8787/cloudinary/sign-upload";
 let autos=[],entregas=[],finanzas=[],isAdmin=false,currentUser=null,currentRole=null,isSuperAdmin=false,isOwner=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false,fichaDesdeDeepLink=false;
 let fotosLocales=[],fotoLocalArrastrada=null;
 let imagenesEdicion=[],imagenesOriginales=[],modoFotosEdicion=null,imagenEdicionArrastrada=null;
+let imagenesEliminadasPendientes=[];
 let guardandoAuto=false;
 
 async function cargar(){
@@ -1530,6 +1531,16 @@ async function rollbackResultadoSubida(batchId,imagenes,fetchImpl=fetch){
 function obtenerImagenesNuevasEdicion(edicion=imagenesEdicion){
   return Array.from(edicion||[]).filter(entrada=>entrada?.tipo==='nueva');
 }
+function validarEstadoImagenesEdicion(edicion=imagenesEdicion){
+  const entradas=Array.from(edicion||[]);
+  validarCantidadFotosCloudinary(entradas.length);
+  if(new Set(entradas.map(entrada=>entrada?.id)).size!==entradas.length)throw new Error('invalid_photo_edit_state');
+  const valido=entradas.every(entrada=>entrada?.id&&(entrada.tipo==='existente'
+    ?typeof entrada.imagen?.publicId==='string'&&entrada.imagen.publicId&&typeof entrada.imagen?.secureUrl==='string'&&entrada.imagen.secureUrl
+    :entrada.tipo==='nueva'&&entrada.file instanceof File));
+  if(!valido)throw new Error('invalid_photo_edit_state');
+  return entradas;
+}
 function calcularImagenesEliminadasEdicion(originales=imagenesOriginales,edicion=imagenesEdicion){
   const publicIdsActuales=new Set(Array.from(edicion||[]).filter(entrada=>entrada?.tipo==='existente').map(entrada=>entrada.imagen?.publicId).filter(Boolean));
   return Array.from(originales||[]).filter(imagen=>imagen?.publicId&&!publicIdsActuales.has(imagen.publicId)).map(clonarImagenEdicion);
@@ -1581,7 +1592,7 @@ async function prepararPersistenciaImagenesEdicion({fetchImpl=fetch,subirNuevasI
   if(modoFotosEdicion!=='administrado')return {ok:false,error:'photo_edit_not_managed'};
   const originales=imagenesOriginales.map(clonarImagenEdicion);
   const edicion=imagenesEdicion.map(entrada=>entrada?.tipo==='existente'?{...entrada,imagen:clonarImagenEdicion(entrada.imagen)}:{...entrada});
-  if(edicion.length<1||edicion.length>10)return {ok:false,error:'invalid_photo_count'};
+  try{validarEstadoImagenesEdicion(edicion);}catch(error){return {ok:false,error:error?.message||'invalid_photo_edit_state'};}
   const nuevas=obtenerImagenesNuevasEdicion(edicion);
   const subida=await subirNuevasImpl(nuevas,{fetchImpl});
   if(!subida.ok)return subida;
@@ -1594,6 +1605,25 @@ async function prepararPersistenciaImagenesEdicion({fetchImpl=fetch,subirNuevasI
     const rollback=subidas.length?await rollbackImpl(subida.batchId,subidas,fetchImpl):null;
     return {ok:false,batchId:subida.batchId,error:error?.message||'invalid_final_photos',nuevasSubidas:subida.nuevasSubidas,rollback};
   }
+}
+async function guardarEdicionAdministradaConFotos(dataFormulario,fechaIngreso,comisionVenta,{fetchImpl=fetch,prepararImpl=prepararPersistenciaImagenesEdicion,guardarImpl=guardarEdicionConFinanzas,rollbackImpl=rollbackResultadoSubida,onGuardando=()=>{}}={}){
+  if(!editId||modoFotosEdicion!=='administrado')return {ok:false,error:'photo_edit_not_managed'};
+  const preparacion=await prepararImpl({fetchImpl});
+  if(!preparacion.ok)return preparacion;
+  const data={...dataFormulario,foto:preparacion.foto,fotos:preparacion.fotos,imagenes:preparacion.imagenesFinales.map(clonarImagenEdicion)};
+  const autosAnteriores=autos;
+  autos=autos.map(auto=>auto.id===editId?data:auto);
+  onGuardando();
+  let guardado=false;
+  try{guardado=await guardarImpl(data,fechaIngreso,comisionVenta);}catch{}
+  if(!guardado){
+    autos=autosAnteriores;
+    const subidas=preparacion.nuevasSubidas.map(resultado=>resultado.imagen);
+    const rollback=subidas.length?await rollbackImpl(preparacion.batchId,subidas,fetchImpl):null;
+    return {ok:false,error:'vehicle_save_failed',rollback,nuevasSubidas:preparacion.nuevasSubidas,batchId:preparacion.batchId};
+  }
+  imagenesEliminadasPendientes=preparacion.imagenesEliminadas.map(clonarImagenEdicion);
+  return {...preparacion,ok:true,data};
 }
 async function guardarAltaNuevaConCloudinary(data,fechaIngreso,comisionVenta,{fetchImpl=fetch,guardarAltaImpl=guardarAltaConFinanzas}={}){
   const fotosSeleccionadas=[...fotosLocales];
@@ -1629,9 +1659,20 @@ function mensajeFalloAlta(resultado){
 document.getElementById('fotos-local-input').addEventListener('change',seleccionarFotosLocales);
 document.getElementById('imagenes-edicion-input').addEventListener('change',seleccionarImagenesEdicion);
 
-function protegerFotosEdicion(data,original){
+function protegerFotosEdicion(data,original,usarEdicionAdministrada=false){
+  if(usarEdicionAdministrada)return data;
   if(!original||!Array.isArray(original.imagenes)||original.imagenes.length===0)return data;
   return {...data,foto:original.foto,fotos:original.fotos,imagenes:original.imagenes.map(imagen=>({...imagen}))};
+}
+function mensajeFalloEdicionFotos(resultado){
+  if(resultado?.rollback&&!resultado.rollback.ok){
+    const pendientes=resultado.rollback.pending||[];
+    return `No se guardó el vehículo. Quedaron ${pendientes.length} imágenes nuevas pendientes de limpieza:\n${pendientes.join('\n')}`;
+  }
+  if(resultado?.error==='invalid_photo_count')return 'La edición debe conservar entre 1 y 10 fotos.';
+  if(resultado?.error==='invalid_photo_edit_state')return 'El estado de las fotos no es válido. Revisá la selección e intentá nuevamente.';
+  if(resultado?.error==='vehicle_save_failed')return 'No se guardó el vehículo. Las fotos nuevas subidas fueron limpiadas y podés reintentar.';
+  return 'No se pudieron preparar las fotos. Revisá la conexión e intentá nuevamente.';
 }
 
 async function guardarAuto(){
@@ -1644,6 +1685,7 @@ async function guardarAuto(){
   const vantaActual=autoActual?.venta||null;
   const fechaIngreso=document.getElementById('fm-fecha-ingreso').value;
   const comisionVenta=enteroNoNegativo(document.getElementById('fm-comision-venta').value,'La comisión de venta');if(comisionVenta===null)return;
+  const usarEdicionAdministrada=!!editId&&modoFotosEdicion==='administrado';
   const data=protegerFotosEdicion({
     id:editId||Date.now().toString(),marca,modelo,
     anio:document.getElementById('fm-anio').value.trim(),
@@ -1661,8 +1703,18 @@ async function guardarAuto(){
     foto:document.getElementById('fm-foto').value.trim(),
     fotos:document.getElementById('fm-fotos').value.trim(),
     venta:vantaActual,
-  },autoActual);
+  },autoActual,usarEdicionAdministrada);
   if(editId){
+    if(usarEdicionAdministrada){
+      setGuardandoAuto(true);actualizarEstadoGuardado('Preparando fotos...');
+      let resultado;
+      try{resultado=await guardarEdicionAdministradaConFotos(data,fechaIngreso,comisionVenta,{onGuardando:()=>actualizarEstadoGuardado('Guardando vehículo...')});}
+      catch{resultado={ok:false,error:'vehicle_save_failed',rollback:null};}
+      if(!resultado.ok){
+        const mensaje=mensajeFalloEdicionFotos(resultado);actualizarEstadoGuardado(mensaje,true);alert(mensaje);setGuardandoAuto(false);return;
+      }
+      setGuardandoAuto(false);cerrar('ov-form');render();showToast('✓ Edición guardada');return;
+    }
     const autosAnteriores=autos;
     autos=autos.map(a=>a.id===editId?data:a);
     if(!await guardarEdicionConFinanzas(data,fechaIngreso,comisionVenta)){autos=autosAnteriores;return;}
