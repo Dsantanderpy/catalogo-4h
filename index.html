@@ -1527,6 +1527,74 @@ async function rollbackResultadoSubida(batchId,imagenes,fetchImpl=fetch){
   if(!publicIds.length)return {ok:true,pending:[]};
   return rollbackCloudinary(batchId,publicIds,fetchImpl);
 }
+function obtenerImagenesNuevasEdicion(edicion=imagenesEdicion){
+  return Array.from(edicion||[]).filter(entrada=>entrada?.tipo==='nueva');
+}
+function calcularImagenesEliminadasEdicion(originales=imagenesOriginales,edicion=imagenesEdicion){
+  const publicIdsActuales=new Set(Array.from(edicion||[]).filter(entrada=>entrada?.tipo==='existente').map(entrada=>entrada.imagen?.publicId).filter(Boolean));
+  return Array.from(originales||[]).filter(imagen=>imagen?.publicId&&!publicIdsActuales.has(imagen.publicId)).map(clonarImagenEdicion);
+}
+function construirImagenesFinalesEdicion(edicion=imagenesEdicion,resultadosNuevos=[]){
+  const ordenVisual=Array.from(edicion||[]);
+  validarCantidadFotosCloudinary(ordenVisual.length);
+  const nuevas=obtenerImagenesNuevasEdicion(ordenVisual);
+  const resultadosPorId=new Map();
+  for(const resultado of Array.from(resultadosNuevos||[])){
+    if(!resultado?.id||resultadosPorId.has(resultado.id)||!resultado.imagen)throw new Error('invalid_new_photo_mapping');
+    resultadosPorId.set(resultado.id,resultado.imagen);
+  }
+  if(resultadosPorId.size!==nuevas.length||nuevas.some(entrada=>!resultadosPorId.has(entrada.id)))throw new Error('invalid_new_photo_mapping');
+  return ordenVisual.map((entrada,indice)=>{
+    const imagen=entrada?.tipo==='nueva'?resultadosPorId.get(entrada.id):entrada?.imagen;
+    if(!imagen||typeof imagen.publicId!=='string'||!imagen.publicId||typeof imagen.secureUrl!=='string'||!imagen.secureUrl)throw new Error('invalid_final_photo');
+    return {...imagen,orden:indice+1,portada:indice===0};
+  });
+}
+function construirCamposFotosEdicion(imagenesFinales){
+  const imagenes=Array.from(imagenesFinales||[]).map(clonarImagenEdicion);
+  validarCantidadFotosCloudinary(imagenes.length);
+  if(imagenes.some(imagen=>typeof imagen?.secureUrl!=='string'||!imagen.secureUrl))throw new Error('invalid_final_photo');
+  return {foto:imagenes[0].secureUrl,fotos:imagenes.slice(1).map(imagen=>imagen.secureUrl).join('\n'),imagenes};
+}
+async function subirNuevasImagenesEdicion(nuevas,{fetchImpl=fetch,solicitarFirmaImpl=solicitarFirmaCloudinary,subirFotoImpl=subirFotoCloudinary,rollbackImpl=rollbackResultadoSubida}={}){
+  const lote=Array.from(nuevas||[]);
+  if(!lote.length)return {ok:true,batchId:null,nuevasSubidas:[]};
+  let batchId=null;
+  const nuevasSubidas=[];
+  try{
+    if(lote.length>10||!lote.every(entrada=>entrada?.id&&entrada.file instanceof File))throw new Error('invalid_photo_file');
+    if(new Set(lote.map(entrada=>entrada.id)).size!==lote.length)throw new Error('invalid_new_photo_mapping');
+    batchId=crearBatchIdCloudinary();
+    const firma=await solicitarFirmaImpl(lote.length,batchId,fetchImpl);
+    for(let indice=0;indice<lote.length;indice++){
+      const imagen=await subirFotoImpl(lote[indice].file,firma,firma.uploads[indice],fetchImpl);
+      nuevasSubidas.push({id:lote[indice].id,imagen:{...imagen}});
+    }
+    return {ok:true,batchId,nuevasSubidas};
+  }catch(error){
+    const subidas=nuevasSubidas.map(resultado=>resultado.imagen);
+    const rollback=subidas.length?await rollbackImpl(batchId,subidas,fetchImpl):null;
+    return {ok:false,batchId,error:error?.message||'cloudinary_upload_failed',nuevasSubidas:[...nuevasSubidas],rollback};
+  }
+}
+async function prepararPersistenciaImagenesEdicion({fetchImpl=fetch,subirNuevasImpl=subirNuevasImagenesEdicion,rollbackImpl=rollbackResultadoSubida}={}){
+  if(modoFotosEdicion!=='administrado')return {ok:false,error:'photo_edit_not_managed'};
+  const originales=imagenesOriginales.map(clonarImagenEdicion);
+  const edicion=imagenesEdicion.map(entrada=>entrada?.tipo==='existente'?{...entrada,imagen:clonarImagenEdicion(entrada.imagen)}:{...entrada});
+  if(edicion.length<1||edicion.length>10)return {ok:false,error:'invalid_photo_count'};
+  const nuevas=obtenerImagenesNuevasEdicion(edicion);
+  const subida=await subirNuevasImpl(nuevas,{fetchImpl});
+  if(!subida.ok)return subida;
+  try{
+    const imagenesFinales=construirImagenesFinalesEdicion(edicion,subida.nuevasSubidas);
+    const campos=construirCamposFotosEdicion(imagenesFinales);
+    return {ok:true,imagenesFinales:campos.imagenes,foto:campos.foto,fotos:campos.fotos,imagenesEliminadas:calcularImagenesEliminadasEdicion(originales,edicion),nuevasSubidas:subida.nuevasSubidas,batchId:subida.batchId};
+  }catch(error){
+    const subidas=subida.nuevasSubidas.map(resultado=>resultado.imagen);
+    const rollback=subidas.length?await rollbackImpl(subida.batchId,subidas,fetchImpl):null;
+    return {ok:false,batchId:subida.batchId,error:error?.message||'invalid_final_photos',nuevasSubidas:subida.nuevasSubidas,rollback};
+  }
+}
 async function guardarAltaNuevaConCloudinary(data,fechaIngreso,comisionVenta,{fetchImpl=fetch,guardarAltaImpl=guardarAltaConFinanzas}={}){
   const fotosSeleccionadas=[...fotosLocales];
   if(fotosSeleccionadas.length<1||fotosSeleccionadas.length>10)return {ok:false,error:'invalid_photo_count',rollback:null};
