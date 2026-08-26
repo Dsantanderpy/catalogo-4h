@@ -1501,10 +1501,10 @@ function setGuardandoAuto(activo){
   const guardar=document.getElementById('fm-guardar');if(guardar)guardar.disabled=activo;
   const cancelar=document.getElementById('fm-cancelar');if(cancelar)cancelar.disabled=activo;
 }
+function esPublicIdCloudinaryValido(publicId){return typeof publicId==='string'&&/^catalogo-vehiculos\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(publicId);}
 async function rollbackCloudinary(batchId,publicIds,fetchImpl=fetch){
   const ids=Array.from(publicIds||[]);
-  const publicIdPattern=/^catalogo-vehiculos\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
-  if(!currentUser||typeof batchId!=='string'||!/^[A-Za-z0-9_-]{8,80}$/.test(batchId)||ids.length<1||ids.length>10||!ids.every(id=>publicIdPattern.test(id))){
+  if(!currentUser||typeof batchId!=='string'||!/^[A-Za-z0-9_-]{8,80}$/.test(batchId)||ids.length<1||ids.length>10||!ids.every(esPublicIdCloudinaryValido)){
     return {ok:false,pending:ids,error:'invalid_rollback_request'};
   }
   try{
@@ -1548,6 +1548,35 @@ function validarEstadoImagenesEdicion(edicion=imagenesEdicion){
 function calcularImagenesEliminadasEdicion(originales=imagenesOriginales,edicion=imagenesEdicion){
   const publicIdsActuales=new Set(Array.from(edicion||[]).filter(entrada=>entrada?.tipo==='existente').map(entrada=>entrada.imagen?.publicId).filter(Boolean));
   return Array.from(originales||[]).filter(imagen=>imagen?.publicId&&!publicIdsActuales.has(imagen.publicId)).map(clonarImagenEdicion);
+}
+function obtenerPublicIdsLimpiezaEdicion(pendientes=imagenesEliminadasPendientes,imagenesFinales=[]){
+  const activos=new Set(Array.from(imagenesFinales||[]).map(imagen=>imagen?.publicId).filter(esPublicIdCloudinaryValido));
+  const publicIds=[];
+  for(const pendiente of Array.from(pendientes||[])){
+    const publicId=typeof pendiente==='string'?pendiente:pendiente?.publicId;
+    if(!esPublicIdCloudinaryValido(publicId)||activos.has(publicId)||publicIds.includes(publicId))continue;
+    publicIds.push(publicId);
+  }
+  if(publicIds.length>10)throw new Error('invalid_cleanup_photo_count');
+  return publicIds;
+}
+async function limpiarImagenesRetiradasCloudinary(pendientes,imagenesFinales,{fetchImpl=fetch,rollbackImpl=rollbackCloudinary,crearBatchIdImpl=crearBatchIdCloudinary}={}){
+  let publicIds=[];
+  try{publicIds=obtenerPublicIdsLimpiezaEdicion(pendientes,imagenesFinales);}catch(error){
+    const conservados=Array.from(pendientes||[]).map(item=>typeof item==='string'?item:item?.publicId).filter(esPublicIdCloudinaryValido);
+    return {ok:false,pending:[...new Set(conservados)],error:codigoDiagnosticoFotos(error,'invalid_cleanup_request'),enviados:[]};
+  }
+  if(!publicIds.length)return {ok:true,pending:[],enviados:[]};
+  let batchId=null;
+  try{
+    batchId=crearBatchIdImpl();
+    const resultado=await rollbackImpl(batchId,publicIds,fetchImpl);
+    if(resultado?.ok)return {ok:true,batchId,pending:[],enviados:publicIds};
+    const pending=Array.isArray(resultado?.pending)?resultado.pending.filter(id=>publicIds.includes(id)):publicIds;
+    return {ok:false,batchId,pending:[...new Set(pending)],error:resultado?.error||'cloudinary_cleanup_failed',enviados:publicIds};
+  }catch(error){
+    return {ok:false,batchId,pending:publicIds,error:codigoDiagnosticoFotos(error,'cloudinary_cleanup_failed'),enviados:publicIds};
+  }
 }
 function construirImagenesFinalesEdicion(edicion=imagenesEdicion,resultadosNuevos=[]){
   const ordenVisual=Array.from(edicion||[]);
@@ -1610,7 +1639,7 @@ async function prepararPersistenciaImagenesEdicion({fetchImpl=fetch,subirNuevasI
     return {ok:false,batchId:subida.batchId,error:codigoDiagnosticoFotos(error,'invalid_final_photos'),nuevasSubidas:subida.nuevasSubidas,rollback};
   }
 }
-async function guardarEdicionAdministradaConFotos(dataFormulario,fechaIngreso,comisionVenta,{fetchImpl=fetch,prepararImpl=prepararPersistenciaImagenesEdicion,guardarImpl=guardarEdicionConFinanzas,rollbackImpl=rollbackResultadoSubida,onGuardando=()=>{}}={}){
+async function guardarEdicionAdministradaConFotos(dataFormulario,fechaIngreso,comisionVenta,{fetchImpl=fetch,prepararImpl=prepararPersistenciaImagenesEdicion,guardarImpl=guardarEdicionConFinanzas,rollbackImpl=rollbackResultadoSubida,limpiarRetiradasImpl=limpiarImagenesRetiradasCloudinary,onGuardando=()=>{},onLimpiando=()=>{}}={}){
   if(!editId||modoFotosEdicion!=='administrado')return {ok:false,error:'photo_edit_not_managed'};
   const preparacion=await prepararImpl({fetchImpl});
   if(!preparacion.ok)return preparacion;
@@ -1627,7 +1656,12 @@ async function guardarEdicionAdministradaConFotos(dataFormulario,fechaIngreso,co
     return {ok:false,error:'vehicle_save_failed',rollback,nuevasSubidas:preparacion.nuevasSubidas,batchId:preparacion.batchId};
   }
   imagenesEliminadasPendientes=preparacion.imagenesEliminadas.map(clonarImagenEdicion);
-  return {...preparacion,ok:true,data};
+  onLimpiando();
+  let limpieza;
+  try{limpieza=await limpiarRetiradasImpl(imagenesEliminadasPendientes,data.imagenes,{fetchImpl});}
+  catch(error){limpieza={ok:false,pending:obtenerPublicIdsLimpiezaEdicion(imagenesEliminadasPendientes,data.imagenes),error:codigoDiagnosticoFotos(error,'cloudinary_cleanup_failed')};}
+  imagenesEliminadasPendientes=limpieza.ok?[]:[...limpieza.pending];
+  return {...preparacion,ok:true,data,limpieza};
 }
 async function guardarAltaNuevaConCloudinary(data,fechaIngreso,comisionVenta,{fetchImpl=fetch,guardarAltaImpl=guardarAltaConFinanzas}={}){
   const fotosSeleccionadas=[...fotosLocales];
@@ -1679,6 +1713,10 @@ function mensajeFalloEdicionFotos(resultado){
   if(resultado?.error==='vehicle_save_failed')return `No se guardó el vehículo. Las fotos nuevas subidas fueron limpiadas y podés reintentar.${detalle}`;
   return `No se pudieron preparar las fotos. Revisá la conexión e intentá nuevamente.${detalle}`;
 }
+function mensajeLimpiezaPendiente(resultado){
+  const pendientes=Array.from(resultado?.limpieza?.pending||[]);
+  return `El vehículo se guardó correctamente, pero quedaron ${pendientes.length} imágenes pendientes de limpieza.${pendientes.length?`\n${pendientes.join('\n')}`:''}`;
+}
 
 async function guardarAuto(){
   if(!requireSuperAdmin())return;
@@ -1713,10 +1751,13 @@ async function guardarAuto(){
     if(usarEdicionAdministrada){
       setGuardandoAuto(true);actualizarEstadoGuardado('Preparando fotos...');
       let resultado;
-      try{resultado=await guardarEdicionAdministradaConFotos(data,fechaIngreso,comisionVenta,{onGuardando:()=>actualizarEstadoGuardado('Guardando vehículo...')});}
+      try{resultado=await guardarEdicionAdministradaConFotos(data,fechaIngreso,comisionVenta,{onGuardando:()=>actualizarEstadoGuardado('Guardando vehículo...'),onLimpiando:()=>actualizarEstadoGuardado('Limpiando fotos retiradas...')});}
       catch(error){resultado={ok:false,error:codigoDiagnosticoFotos(error,'vehicle_save_failed'),rollback:null};}
       if(!resultado.ok){
         const mensaje=mensajeFalloEdicionFotos(resultado);actualizarEstadoGuardado(mensaje,true);alert(mensaje);setGuardandoAuto(false);return;
+      }
+      if(resultado.limpieza&&!resultado.limpieza.ok){
+        const mensaje=mensajeLimpiezaPendiente(resultado);actualizarEstadoGuardado(mensaje,true);alert(mensaje);
       }
       setGuardandoAuto(false);cerrar('ov-form');render();showToast('✓ Edición guardada');return;
     }
