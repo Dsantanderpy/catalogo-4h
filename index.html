@@ -1531,6 +1531,10 @@ async function rollbackResultadoSubida(batchId,imagenes,fetchImpl=fetch){
 function obtenerImagenesNuevasEdicion(edicion=imagenesEdicion){
   return Array.from(edicion||[]).filter(entrada=>entrada?.tipo==='nueva');
 }
+function codigoDiagnosticoFotos(error,fallback='photo_preparation_failed'){
+  const codigo=typeof error?.code==='string'&&error.code?error.code:typeof error?.message==='string'&&error.message?error.message:fallback;
+  return /^[A-Za-z0-9_./:-]{1,120}$/.test(codigo)?codigo:fallback;
+}
 function validarEstadoImagenesEdicion(edicion=imagenesEdicion){
   const entradas=Array.from(edicion||[]);
   validarCantidadFotosCloudinary(entradas.length);
@@ -1585,14 +1589,14 @@ async function subirNuevasImagenesEdicion(nuevas,{fetchImpl=fetch,solicitarFirma
   }catch(error){
     const subidas=nuevasSubidas.map(resultado=>resultado.imagen);
     const rollback=subidas.length?await rollbackImpl(batchId,subidas,fetchImpl):null;
-    return {ok:false,batchId,error:error?.message||'cloudinary_upload_failed',nuevasSubidas:[...nuevasSubidas],rollback};
+    return {ok:false,batchId,error:codigoDiagnosticoFotos(error,'cloudinary_upload_failed'),nuevasSubidas:[...nuevasSubidas],rollback};
   }
 }
 async function prepararPersistenciaImagenesEdicion({fetchImpl=fetch,subirNuevasImpl=subirNuevasImagenesEdicion,rollbackImpl=rollbackResultadoSubida}={}){
   if(modoFotosEdicion!=='administrado')return {ok:false,error:'photo_edit_not_managed'};
   const originales=imagenesOriginales.map(clonarImagenEdicion);
   const edicion=imagenesEdicion.map(entrada=>entrada?.tipo==='existente'?{...entrada,imagen:clonarImagenEdicion(entrada.imagen)}:{...entrada});
-  try{validarEstadoImagenesEdicion(edicion);}catch(error){return {ok:false,error:error?.message||'invalid_photo_edit_state'};}
+  try{validarEstadoImagenesEdicion(edicion);}catch(error){return {ok:false,error:codigoDiagnosticoFotos(error,'invalid_photo_edit_state')};}
   const nuevas=obtenerImagenesNuevasEdicion(edicion);
   const subida=await subirNuevasImpl(nuevas,{fetchImpl});
   if(!subida.ok)return subida;
@@ -1603,7 +1607,7 @@ async function prepararPersistenciaImagenesEdicion({fetchImpl=fetch,subirNuevasI
   }catch(error){
     const subidas=subida.nuevasSubidas.map(resultado=>resultado.imagen);
     const rollback=subidas.length?await rollbackImpl(subida.batchId,subidas,fetchImpl):null;
-    return {ok:false,batchId:subida.batchId,error:error?.message||'invalid_final_photos',nuevasSubidas:subida.nuevasSubidas,rollback};
+    return {ok:false,batchId:subida.batchId,error:codigoDiagnosticoFotos(error,'invalid_final_photos'),nuevasSubidas:subida.nuevasSubidas,rollback};
   }
 }
 async function guardarEdicionAdministradaConFotos(dataFormulario,fechaIngreso,comisionVenta,{fetchImpl=fetch,prepararImpl=prepararPersistenciaImagenesEdicion,guardarImpl=guardarEdicionConFinanzas,rollbackImpl=rollbackResultadoSubida,onGuardando=()=>{}}={}){
@@ -1665,14 +1669,15 @@ function protegerFotosEdicion(data,original,usarEdicionAdministrada=false){
   return {...data,foto:original.foto,fotos:original.fotos,imagenes:original.imagenes.map(imagen=>({...imagen}))};
 }
 function mensajeFalloEdicionFotos(resultado){
+  const detalle=`\nCódigo: ${codigoDiagnosticoFotos({code:resultado?.error})}`;
   if(resultado?.rollback&&!resultado.rollback.ok){
     const pendientes=resultado.rollback.pending||[];
-    return `No se guardó el vehículo. Quedaron ${pendientes.length} imágenes nuevas pendientes de limpieza:\n${pendientes.join('\n')}`;
+    return `No se guardó el vehículo. Quedaron ${pendientes.length} imágenes nuevas pendientes de limpieza:\n${pendientes.join('\n')}${detalle}`;
   }
-  if(resultado?.error==='invalid_photo_count')return 'La edición debe conservar entre 1 y 10 fotos.';
-  if(resultado?.error==='invalid_photo_edit_state')return 'El estado de las fotos no es válido. Revisá la selección e intentá nuevamente.';
-  if(resultado?.error==='vehicle_save_failed')return 'No se guardó el vehículo. Las fotos nuevas subidas fueron limpiadas y podés reintentar.';
-  return 'No se pudieron preparar las fotos. Revisá la conexión e intentá nuevamente.';
+  if(resultado?.error==='invalid_photo_count')return `La edición debe conservar entre 1 y 10 fotos.${detalle}`;
+  if(resultado?.error==='invalid_photo_edit_state')return `El estado de las fotos no es válido. Revisá la selección e intentá nuevamente.${detalle}`;
+  if(resultado?.error==='vehicle_save_failed')return `No se guardó el vehículo. Las fotos nuevas subidas fueron limpiadas y podés reintentar.${detalle}`;
+  return `No se pudieron preparar las fotos. Revisá la conexión e intentá nuevamente.${detalle}`;
 }
 
 async function guardarAuto(){
@@ -1709,7 +1714,7 @@ async function guardarAuto(){
       setGuardandoAuto(true);actualizarEstadoGuardado('Preparando fotos...');
       let resultado;
       try{resultado=await guardarEdicionAdministradaConFotos(data,fechaIngreso,comisionVenta,{onGuardando:()=>actualizarEstadoGuardado('Guardando vehículo...')});}
-      catch{resultado={ok:false,error:'vehicle_save_failed',rollback:null};}
+      catch(error){resultado={ok:false,error:codigoDiagnosticoFotos(error,'vehicle_save_failed'),rollback:null};}
       if(!resultado.ok){
         const mensaje=mensajeFalloEdicionFotos(resultado);actualizarEstadoGuardado(mensaje,true);alert(mensaje);setGuardandoAuto(false);return;
       }
