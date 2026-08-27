@@ -157,6 +157,13 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .ov.on{display:flex;}
 .modal{background:var(--gris);border:1px solid var(--borde);border-radius:12px;width:100%;max-width:500px;max-height:88vh;overflow-y:auto;padding:1.75rem;margin:auto;position:relative;}
 .modal.wide{max-width:560px;}
+.cleanup-admin-resumen{display:none;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--gris);border:1px solid var(--borde);border-radius:10px;padding:12px 14px;margin-bottom:16px;}
+.cleanup-lista{display:grid;gap:10px;margin-top:12px;}
+.cleanup-item{min-width:0;background:#111a24;border:1px solid var(--borde);border-radius:9px;padding:12px;}
+.cleanup-item-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap;}
+.cleanup-meta{font-size:12px;color:var(--apagado);line-height:1.55;overflow-wrap:anywhere;}
+.cleanup-public-id{font-family:monospace;font-size:11px;color:#ddd;overflow-wrap:anywhere;margin:8px 0;}
+.cleanup-revision{font-size:11px;color:var(--dorado);font-weight:700;text-transform:uppercase;letter-spacing:.7px;}
 .mc{position:absolute;top:14px;right:14px;background:transparent;border:none;color:var(--apagado);font-size:18px;cursor:pointer;line-height:1;}
 .mt{font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:700;color:var(--rojo);letter-spacing:2px;margin-bottom:1.25rem;padding-bottom:0.75rem;border-bottom:1px solid var(--borde);}
 .fg{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
@@ -383,6 +390,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 <div id="sec-ventas" class="sec">
   <div class="wrap">
     <div class="sec-header"><div><div class="sec-sup">Panel Admin</div><div class="sec-title">Registro de ventas</div></div></div>
+    <div class="cleanup-admin-resumen" id="cleanup-admin-resumen"><div>Limpiezas pendientes: <strong id="cleanup-admin-contador">—</strong></div><button class="bout" onclick="abrirCleanupsPendientes()">Revisar</button></div>
     <div class="ventas-filters">
       <div><div class="f-label">Vendedor</div><input class="fi-f" id="vf-vendedor" placeholder="Nombre" oninput="renderVentas()"></div>
       <div><div class="f-label">Desde</div><input class="fi-f" id="vf-desde" type="date" onchange="renderVentas()"></div>
@@ -439,6 +447,16 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
     <div class="mt">FICHA FINANCIERA</div>
     <div id="finanzas-c"></div>
     <div class="ff"><button class="bout" onclick="cerrar('ov-finanzas')">Cerrar</button></div>
+  </div>
+</div>
+
+<div class="ov" id="ov-cleanups">
+  <div class="modal wide">
+    <button class="mc" onclick="cerrar('ov-cleanups')">✕</button>
+    <div class="mt">LIMPIEZAS PENDIENTES</div>
+    <div id="cleanups-estado" class="fin-meta">Sin consultar</div>
+    <div id="cleanups-lista" class="cleanup-lista"></div>
+    <div class="ff"><button class="bout" onclick="cerrar('ov-cleanups')">Cerrar</button></div>
   </div>
 </div>
 
@@ -582,6 +600,8 @@ let fotoEntregaLocal=null;
 let fotoEntregaRetiradaPendiente=null;
 let fotosEntregasEliminadasPendientes=[];
 const entregasEliminandose=new Set();
+const cleanupsReintentando=new Set();
+let cleanupsPendientesVista=new Map();
 let guardandoAuto=false,guardandoEntrega=false;
 
 async function cargar(){
@@ -602,7 +622,7 @@ function goSec(id,btn){
   document.getElementById('sec-'+id).classList.add('on');
   if(btn)btn.classList.add('on');
   window.scrollTo(0,0);
-  if(id==='ventas')renderVentas();
+  if(id==='ventas'){renderVentas();actualizarContadorCleanups();}
   if(id==='finanzas')cargarFinanzas();
   if(id==='dashboard')cargarDashboard();
 }
@@ -618,6 +638,7 @@ function render(){
   ['ba-d','ba-v'].forEach(id=>document.getElementById(id).style.display=isAdmin?'inline-block':'none');
   document.querySelectorAll('.nb-admin-only').forEach(el=>el.style.display=isAdmin?'inline-block':'none');
   document.querySelectorAll('.nb-finanzas-only').forEach(el=>el.style.display=puedeVerFinanzas()?'inline-block':'none');
+  document.getElementById('cleanup-admin-resumen').style.display=isSuperAdmin?'flex':'none';
   filtrar();renderEntregas();renderHome();renderDestacados();
 }
 
@@ -1288,7 +1309,8 @@ async function actualizarSesionAdmin(user){
   const b=document.getElementById('nb-adm');
   b.textContent=currentUser?'Salir':'Admin';b.className=currentUser?'nb adm-out':'nb adm';b.onclick=currentUser?salirAdmin:abrirLogin;
   if(!isAdmin){
-    ['ov-form','ov-form-entrega','ov-ficha'].forEach(cerrar);
+    ['ov-form','ov-form-entrega','ov-ficha','ov-cleanups'].forEach(cerrar);
+    cleanupsPendientesVista=new Map();document.getElementById('cleanup-admin-contador').textContent='—';
     if(document.getElementById('sec-ventas').classList.contains('on'))goSec('inicio',document.querySelector('.nav-links .nb'));
   }
   if(!puedeVerFinanzas()){
@@ -1658,6 +1680,67 @@ async function persistirPendientesCleanupPostFirestore({tipo,referenciaId,limpie
 }
 async function persistirPendientesRollbackUpload({tipo,referenciaId,rollback},{persistirImpl=persistirCleanupPendiente}={}){
   return persistirPendientesCleanupPostFirestore({tipo,referenciaId,limpieza:rollback},{persistirImpl});
+}
+function publicIdEstaActivo(publicId,{autosActuales=autos,entregasActuales=entregas}={}){
+  if(!esPublicIdCloudinaryValido(publicId))return false;
+  const activoEnAutos=Array.from(autosActuales||[]).some(auto=>Array.isArray(auto?.imagenes)&&auto.imagenes.some(imagen=>imagen?.publicId===publicId));
+  const activoEnEntregas=Array.from(entregasActuales||[]).some(entrega=>entrega?.imagen?.publicId===publicId);
+  return activoEnAutos||activoEnEntregas;
+}
+function escaparHTML(valor){return String(valor??'').replace(/[&<>"']/g,caracter=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[caracter]));}
+function renderCleanupsPendientes(resultado){
+  const validos=Array.from(resultado?.validos||[]),invalidos=Array.from(resultado?.invalidos||[]),todos=[...validos,...invalidos];
+  cleanupsPendientesVista=new Map(validos.map(item=>[item.publicIds[0],item]));
+  document.getElementById('cleanup-admin-contador').textContent=String(todos.length);
+  document.getElementById('cleanups-estado').textContent=`Cantidad total: ${todos.length}`;
+  document.getElementById('cleanups-lista').innerHTML=todos.length?todos.map(item=>{
+    const publicId=item.publicIds?.[0]||'';
+    const requiereRevision=!item.valido||item.estado==='requiere_revision';
+    return `<div class="cleanup-item"><div class="cleanup-item-head"><div><div class="cleanup-revision">${requiereRevision?'Requiere revisión':escaparHTML(item.estado)}</div><div class="cleanup-meta">${escaparHTML(item.tipo||'Documento inválido')} · ${escaparHTML(item.referenciaId||'Sin referencia')}</div></div>${!requiereRevision&&esPublicIdCloudinaryValido(publicId)?`<button class="bout" ${cleanupsReintentando.has(publicId)?'disabled':''} onclick="reintentarCleanupPendiente('${publicId}')">Reintentar</button>`:''}</div><div class="cleanup-public-id">${escaparHTML(publicId||'PublicId no disponible')}</div><div class="cleanup-meta">Intentos: ${Number.isInteger(item.intentos)?item.intentos:'—'}</div></div>`;
+  }).join(''):'<div class="empty" style="display:block">No hay limpiezas pendientes.</div>';
+}
+async function obtenerYRenderizarCleanups({obtenerImpl=obtenerCleanupsPendientes}={}){
+  const resultado=await obtenerImpl();renderCleanupsPendientes(resultado);return resultado;
+}
+async function actualizarContadorCleanups({obtenerImpl=obtenerCleanupsPendientes}={}){
+  if(!isSuperAdmin)return;
+  try{const resultado=await obtenerImpl();document.getElementById('cleanup-admin-contador').textContent=String(resultado.todos.length);}
+  catch{document.getElementById('cleanup-admin-contador').textContent='!';}
+}
+async function abrirCleanupsPendientes(){
+  if(!requireSuperAdmin())return;
+  document.getElementById('ov-cleanups').classList.add('on');
+  document.getElementById('cleanups-estado').textContent='Consultando...';document.getElementById('cleanups-lista').innerHTML='';
+  try{await obtenerYRenderizarCleanups();}
+  catch{document.getElementById('cleanups-estado').textContent='No se pudieron consultar las limpiezas pendientes.';}
+}
+async function reintentarCleanupPendiente(publicId,{autorizarImpl=requireSuperAdmin,obtenerImpl=obtenerCleanupsPendientes,activoImpl=publicIdEstaActivo,limpiarImpl=limpiarImagenesRetiradasCloudinary,resolverImpl=resolverCleanupPendiente,registrarFalloImpl=registrarFalloReintentoCleanup,refrescarImpl=obtenerYRenderizarCleanups}={}){
+  if(!autorizarImpl()||!esPublicIdCloudinaryValido(publicId)||cleanupsReintentando.has(publicId))return {ok:false,error:'cleanup_retry_blocked'};
+  cleanupsReintentando.add(publicId);renderCleanupsPendientes({validos:[...cleanupsPendientesVista.values()],invalidos:[]});
+  try{
+    const consulta=await obtenerImpl();
+    const pendiente=consulta.validos.find(item=>item.estado==='pendiente'&&item.publicIds?.[0]===publicId);
+    if(!pendiente)return {ok:false,error:'cleanup_pending_not_available'};
+    if(activoImpl(publicId)){
+      await registrarFalloImpl(publicId,'active_catalog_reference','requiere_revision');
+      alert('Esta imagen continúa referenciada por el catálogo y no puede eliminarse automáticamente.');
+      return {ok:false,error:'active_catalog_reference'};
+    }
+    let limpieza;
+    try{limpieza=await limpiarImpl([publicId],[]);}catch(error){limpieza={ok:false,pending:[publicId],error:codigoDiagnosticoFotos(error,'cloudinary_cleanup_failed')};}
+    if(limpieza?.ok===true&&Array.isArray(limpieza.pending)&&limpieza.pending.length===0){
+      await resolverImpl(publicId);showToast('✓ Limpieza completada');return {ok:true};
+    }
+    const error=codigoDiagnosticoFotos({code:limpieza?.error},'cloudinary_cleanup_not_confirmed');
+    await registrarFalloImpl(publicId,error,'pendiente');showToast('⚠ La limpieza continúa pendiente');return {ok:false,error};
+  }catch(error){
+    const codigo=codigoDiagnosticoFotos(error,'cleanup_retry_failed');
+    try{await registrarFalloImpl(publicId,codigo,'pendiente');}catch{}
+    return {ok:false,error:codigo};
+  }finally{
+    cleanupsReintentando.delete(publicId);
+    try{await refrescarImpl();}catch{}
+  }
 }
 function validarEstadoImagenesEdicion(edicion=imagenesEdicion){
   const entradas=Array.from(edicion||[]);
@@ -2424,6 +2507,7 @@ window.goSec=goSec;window.abrirLogin=abrirLogin;window.doLogin=doLogin;window.sa
 window.abrirForm=abrirForm;window.guardarAuto=guardarAuto;window.eliminarAuto=eliminarAuto;
 window.verFicha=verFicha;window.toggleVendido=toggleVendido;window.guardarDatosVenta=guardarDatosVenta;
 window.abrirFormEntrega=abrirFormEntrega;window.guardarEntrega=guardarEntrega;window.eliminarEntrega=eliminarEntrega;window.verEntrega=verEntrega;
+window.abrirCleanupsPendientes=abrirCleanupsPendientes;window.reintentarCleanupPendiente=reintentarCleanupPendiente;
 window.cerrar=cerrar;window.cambiarFoto=cambiarFoto;window.verFotoFull=verFotoFull;window.navegarFoto=navegarFoto;
 window.copiarWA=copiarWA;window.consultarWA=consultarWA;window.getVehiculoURL=getVehiculoURL;window.compartirVehiculo=compartirVehiculo;window.filtrar=filtrar;window.limpiarFil=limpiarFil;window.renderVentas=renderVentas;window.limpiarVF=limpiarVF;window.renderDestacados=renderDestacados;
 window.renderFinanzas=renderFinanzas;window.limpiarFiltrosFinanzas=limpiarFiltrosFinanzas;window.verFinanzas=verFinanzas;window.guardarCompraFinanciera=guardarCompraFinanciera;window.agregarGastoFinanciero=agregarGastoFinanciero;window.eliminarGastoFinanciero=eliminarGastoFinanciero;window.guardarComisionesFinancieras=guardarComisionesFinancieras;window.guardarVentaFinanciera=guardarVentaFinanciera;window.restablecerVentaFinanciera=restablecerVentaFinanciera;
