@@ -1656,6 +1656,9 @@ async function persistirPendientesCleanupPostFirestore({tipo,referenciaId,limpie
   }
   return {ok:fallidos.length===0,persistidos,fallidos};
 }
+async function persistirPendientesRollbackUpload({tipo,referenciaId,rollback},{persistirImpl=persistirCleanupPendiente}={}){
+  return persistirPendientesCleanupPostFirestore({tipo,referenciaId,limpieza:rollback},{persistirImpl});
+}
 function validarEstadoImagenesEdicion(edicion=imagenesEdicion){
   const entradas=Array.from(edicion||[]);
   validarCantidadFotosCloudinary(entradas.length);
@@ -1760,10 +1763,13 @@ async function prepararPersistenciaImagenesEdicion({fetchImpl=fetch,subirNuevasI
     return {ok:false,batchId:subida.batchId,error:codigoDiagnosticoFotos(error,'invalid_final_photos'),nuevasSubidas:subida.nuevasSubidas,rollback};
   }
 }
-async function guardarEdicionAdministradaConFotos(dataFormulario,fechaIngreso,comisionVenta,{fetchImpl=fetch,prepararImpl=prepararPersistenciaImagenesEdicion,guardarImpl=guardarEdicionConFinanzas,rollbackImpl=rollbackResultadoSubida,limpiarRetiradasImpl=limpiarImagenesRetiradasCloudinary,persistirPendientesImpl=persistirPendientesCleanupPostFirestore,onGuardando=()=>{},onLimpiando=()=>{}}={}){
+async function guardarEdicionAdministradaConFotos(dataFormulario,fechaIngreso,comisionVenta,{fetchImpl=fetch,prepararImpl=prepararPersistenciaImagenesEdicion,guardarImpl=guardarEdicionConFinanzas,rollbackImpl=rollbackResultadoSubida,limpiarRetiradasImpl=limpiarImagenesRetiradasCloudinary,persistirPendientesImpl=persistirPendientesCleanupPostFirestore,persistirRollbackImpl=persistirPendientesRollbackUpload,onGuardando=()=>{},onLimpiando=()=>{}}={}){
   if(!editId||modoFotosEdicion!=='administrado')return {ok:false,error:'photo_edit_not_managed'};
   const preparacion=await prepararImpl({fetchImpl});
-  if(!preparacion.ok)return preparacion;
+  if(!preparacion.ok){
+    const persistenciaRollback=await persistirRollbackImpl({tipo:'vehiculo_upload_rollback',referenciaId:editId,rollback:preparacion.rollback});
+    return {...preparacion,persistenciaRollback};
+  }
   const data={...dataFormulario,foto:preparacion.foto,fotos:preparacion.fotos,imagenes:preparacion.imagenesFinales.map(clonarImagenEdicion)};
   const autosAnteriores=autos;
   autos=autos.map(auto=>auto.id===editId?data:auto);
@@ -1774,7 +1780,8 @@ async function guardarEdicionAdministradaConFotos(dataFormulario,fechaIngreso,co
     autos=autosAnteriores;
     const subidas=preparacion.nuevasSubidas.map(resultado=>resultado.imagen);
     const rollback=subidas.length?await rollbackImpl(preparacion.batchId,subidas,fetchImpl):null;
-    return {ok:false,error:'vehicle_save_failed',rollback,nuevasSubidas:preparacion.nuevasSubidas,batchId:preparacion.batchId};
+    const persistenciaRollback=await persistirRollbackImpl({tipo:'vehiculo_upload_rollback',referenciaId:editId,rollback});
+    return {ok:false,error:'vehicle_save_failed',rollback,nuevasSubidas:preparacion.nuevasSubidas,batchId:preparacion.batchId,persistenciaRollback};
   }
   imagenesEliminadasPendientes=preparacion.imagenesEliminadas.map(clonarImagenEdicion);
   onLimpiando();
@@ -1785,13 +1792,14 @@ async function guardarEdicionAdministradaConFotos(dataFormulario,fechaIngreso,co
   const persistenciaPendientes=await persistirPendientesImpl({tipo:'vehiculo_edicion_cleanup',referenciaId:data.id,limpieza});
   return {...preparacion,ok:true,data,limpieza,persistenciaPendientes};
 }
-async function guardarAltaNuevaConCloudinary(data,fechaIngreso,comisionVenta,{fetchImpl=fetch,guardarAltaImpl=guardarAltaConFinanzas}={}){
+async function guardarAltaNuevaConCloudinary(data,fechaIngreso,comisionVenta,{fetchImpl=fetch,guardarAltaImpl=guardarAltaConFinanzas,persistirRollbackImpl=persistirPendientesRollbackUpload}={}){
   const fotosSeleccionadas=[...fotosLocales];
   if(fotosSeleccionadas.length<1||fotosSeleccionadas.length>10)return {ok:false,error:'invalid_photo_count',rollback:null};
   const subida=await subirLoteCloudinary(fotosSeleccionadas,fetchImpl,(actual,total)=>actualizarEstadoGuardado(`Subiendo fotos ${actual}/${total}...`));
   if(!subida.ok){
     const rollback=subida.uploaded.length?await rollbackResultadoSubida(subida.batchId,subida.uploaded,fetchImpl):null;
-    return {ok:false,error:subida.error||'cloudinary_upload_failed',rollback};
+    const persistenciaRollback=await persistirRollbackImpl({tipo:'vehiculo_upload_rollback',referenciaId:subida.batchId||'',rollback});
+    return {ok:false,error:subida.error||'cloudinary_upload_failed',rollback,persistenciaRollback,batchId:subida.batchId};
   }
   const imagenes=subida.images.map(imagen=>({...imagen}));
   const dataConImagenes={...data,foto:imagenes[0].secureUrl,fotos:imagenes.slice(1).map(imagen=>imagen.secureUrl).join('\n'),imagenes};
@@ -1803,9 +1811,14 @@ async function guardarAltaNuevaConCloudinary(data,fechaIngreso,comisionVenta,{fe
   if(!guardado){
     autos=autosAnteriores;
     const rollback=await rollbackResultadoSubida(subida.batchId,imagenes,fetchImpl);
-    return {ok:false,error:'vehicle_save_failed',rollback};
+    const persistenciaRollback=await persistirRollbackImpl({tipo:'vehiculo_upload_rollback',referenciaId:subida.batchId,rollback});
+    return {ok:false,error:'vehicle_save_failed',rollback,persistenciaRollback,batchId:subida.batchId};
   }
   return {ok:true,data:dataConImagenes};
+}
+function detallePersistenciaRollbackFallida(resultado){
+  const publicIds=Array.from(resultado?.persistenciaRollback?.fallidos||[]).map(item=>item.publicId).filter(esPublicIdCloudinaryValido);
+  return publicIds.length?`\nNo se pudo registrar persistentemente la limpieza pendiente:\n${publicIds.join('\n')}`:'';
 }
 function obtenerFotosVehiculoParaCleanup(auto){
   const autoId=auto?.id||null;
@@ -1864,9 +1877,10 @@ async function eliminarAutoTransaccional(id,{guardarImpl=guardar,limpiarImpl=lim
   }finally{autosEliminandose.delete(id);}
 }
 function mensajeFalloAlta(resultado){
+  const detallePersistencia=detallePersistenciaRollbackFallida(resultado);
   if(resultado.rollback&&!resultado.rollback.ok){
     const pendientes=resultado.rollback.pending||[];
-    return `No se guardó el vehículo. Quedaron ${pendientes.length} imágenes pendientes de limpieza:\n${pendientes.join('\n')}`;
+    return `No se guardó el vehículo. Quedaron ${pendientes.length} imágenes pendientes de limpieza:\n${pendientes.join('\n')}${detallePersistencia}`;
   }
   if(resultado.error==='invalid_photo_count')return 'Seleccioná entre 1 y 10 fotos antes de guardar.';
   return 'No se guardó el vehículo. Las fotos subidas fueron limpiadas y podés reintentar.';
@@ -1882,9 +1896,10 @@ function protegerFotosEdicion(data,original,usarEdicionAdministrada=false){
 }
 function mensajeFalloEdicionFotos(resultado){
   const detalle=`\nCódigo: ${codigoDiagnosticoFotos({code:resultado?.error})}`;
+  const detallePersistencia=detallePersistenciaRollbackFallida(resultado);
   if(resultado?.rollback&&!resultado.rollback.ok){
     const pendientes=resultado.rollback.pending||[];
-    return `No se guardó el vehículo. Quedaron ${pendientes.length} imágenes nuevas pendientes de limpieza:\n${pendientes.join('\n')}${detalle}`;
+    return `No se guardó el vehículo. Quedaron ${pendientes.length} imágenes nuevas pendientes de limpieza:\n${pendientes.join('\n')}${detallePersistencia}${detalle}`;
   }
   if(resultado?.error==='invalid_photo_count')return `La edición debe conservar entre 1 y 10 fotos.${detalle}`;
   if(resultado?.error==='invalid_photo_edit_state')return `El estado de las fotos no es válido. Revisá la selección e intentá nuevamente.${detalle}`;
@@ -2081,12 +2096,13 @@ function setGuardandoEntrega(activo){
   guardandoEntrega=activo;
   ['fe-guardar','fe-cancelar','fe-cerrar'].forEach(id=>{const boton=document.getElementById(id);if(boton)boton.disabled=activo;});
 }
-async function guardarAltaEntregaConCloudinary({modelo,texto},{foto=fotoEntregaLocal,fetchImpl=fetch,subirImpl=subirFotoEntregaCloudinary,guardarImpl=guardar,rollbackImpl=rollbackCloudinary,onSubiendo=()=>{},onGuardando=()=>{}}={}){
+async function guardarAltaEntregaConCloudinary({modelo,texto},{foto=fotoEntregaLocal,fetchImpl=fetch,subirImpl=subirFotoEntregaCloudinary,guardarImpl=guardar,rollbackImpl=rollbackCloudinary,persistirRollbackImpl=persistirPendientesRollbackUpload,onSubiendo=()=>{},onGuardando=()=>{}}={}){
   onSubiendo();
   const subida=await subirImpl({foto,fetchImpl});
   if(!subida.ok){
     const rollback=subida.uploaded?.publicId?await rollbackImpl(subida.batchId,[subida.uploaded.publicId],fetchImpl):null;
-    return {...subida,rollback};
+    const persistenciaRollback=await persistirRollbackImpl({tipo:'vendido_upload_rollback',referenciaId:subida.batchId||'',rollback});
+    return {...subida,rollback,persistenciaRollback};
   }
   const data={id:Date.now().toString(),modelo,texto,foto:subida.imagen.secureUrl,imagen:{publicId:subida.imagen.publicId,secureUrl:subida.imagen.secureUrl}};
   const entregasAnteriores=entregas;
@@ -2097,7 +2113,8 @@ async function guardarAltaEntregaConCloudinary({modelo,texto},{foto=fotoEntregaL
   if(!guardado){
     entregas=entregasAnteriores;
     const rollback=await rollbackImpl(subida.batchId,[subida.imagen.publicId],fetchImpl);
-    return {ok:false,error:'delivery_save_failed',rollback,batchId:subida.batchId,uploaded:subida.imagen};
+    const persistenciaRollback=await persistirRollbackImpl({tipo:'vendido_upload_rollback',referenciaId:data.id,rollback});
+    return {ok:false,error:'delivery_save_failed',rollback,batchId:subida.batchId,uploaded:subida.imagen,persistenciaRollback};
   }
   return {ok:true,data,batchId:subida.batchId};
 }
@@ -2157,12 +2174,13 @@ async function eliminarEntregaTransaccional(id,{guardarImpl=guardar,limpiarImpl=
     return {ok:true,limpieza,recurso,tipo:'administrada',persistenciaPendientes};
   }finally{entregasEliminandose.delete(id);}
 }
-async function guardarEdicionEntregaConCloudinary(original,{modelo,texto},{foto=fotoEntregaLocal,fetchImpl=fetch,subirImpl=subirFotoEntregaCloudinary,guardarImpl=guardar,rollbackImpl=rollbackCloudinary,limpiarRetiradaImpl=limpiarFotoEntregaRetiradaCloudinary,persistirPendientesImpl=persistirPendientesCleanupPostFirestore,onSubiendo=()=>{},onGuardando=()=>{},onLimpiando=()=>{}}={}){
+async function guardarEdicionEntregaConCloudinary(original,{modelo,texto},{foto=fotoEntregaLocal,fetchImpl=fetch,subirImpl=subirFotoEntregaCloudinary,guardarImpl=guardar,rollbackImpl=rollbackCloudinary,limpiarRetiradaImpl=limpiarFotoEntregaRetiradaCloudinary,persistirPendientesImpl=persistirPendientesCleanupPostFirestore,persistirRollbackImpl=persistirPendientesRollbackUpload,onSubiendo=()=>{},onGuardando=()=>{},onLimpiando=()=>{}}={}){
   onSubiendo();
   const subida=await subirImpl({foto,fetchImpl});
   if(!subida.ok){
     const rollback=subida.uploaded?.publicId?await rollbackImpl(subida.batchId,[subida.uploaded.publicId],fetchImpl):null;
-    return {...subida,rollback};
+    const persistenciaRollback=await persistirRollbackImpl({tipo:'vendido_upload_rollback',referenciaId:original.id,rollback});
+    return {...subida,rollback,persistenciaRollback};
   }
   const data={...original,modelo,texto,foto:subida.imagen.secureUrl,imagen:{publicId:subida.imagen.publicId,secureUrl:subida.imagen.secureUrl}};
   const entregasAnteriores=entregas;
@@ -2173,7 +2191,8 @@ async function guardarEdicionEntregaConCloudinary(original,{modelo,texto},{foto=
   if(!guardado){
     entregas=entregasAnteriores;
     const rollback=await rollbackImpl(subida.batchId,[subida.imagen.publicId],fetchImpl);
-    return {ok:false,error:'delivery_save_failed',rollback,batchId:subida.batchId,uploaded:subida.imagen};
+    const persistenciaRollback=await persistirRollbackImpl({tipo:'vendido_upload_rollback',referenciaId:original.id,rollback});
+    return {ok:false,error:'delivery_save_failed',rollback,batchId:subida.batchId,uploaded:subida.imagen,persistenciaRollback};
   }
   const anterior=obtenerImagenEntregaAdministrable(original);
   fotoEntregaRetiradaPendiente=anterior&&anterior.publicId!==subida.imagen.publicId?anterior:null;
@@ -2186,9 +2205,10 @@ async function guardarEdicionEntregaConCloudinary(original,{modelo,texto},{foto=
   return {ok:true,data,batchId:subida.batchId,fotoRetirada:fotoEntregaRetiradaPendiente,limpieza,persistenciaPendientes};
 }
 function mensajeFalloAltaEntrega(resultado){
+  const detallePersistencia=detallePersistenciaRollbackFallida(resultado);
   if(resultado?.rollback&&!resultado.rollback.ok){
     const pendientes=resultado.rollback.pending||[];
-    return `No se guardó la entrega. Quedaron ${pendientes.length} imágenes pendientes de limpieza:\n${pendientes.join('\n')}`;
+    return `No se guardó la entrega. Quedaron ${pendientes.length} imágenes pendientes de limpieza:\n${pendientes.join('\n')}${detallePersistencia}`;
   }
   const codigo=codigoDiagnosticoFotos({code:resultado?.error},'delivery_creation_failed');
   if(resultado?.error==='delivery_save_failed')return `No se guardó la entrega. La foto subida fue limpiada y podés reintentar.\nCódigo: ${codigo}`;
