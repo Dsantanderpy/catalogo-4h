@@ -1484,6 +1484,24 @@ async function subirFotoCloudinary(file,config,upload,fetchImpl=fetch){
   if(!resultadoValido)throw new Error('cloudinary_upload_failed');
   return {publicId:data.public_id,secureUrl:data.secure_url,width:data.width,height:data.height,format:data.format,bytes:data.bytes};
 }
+async function subirFotoEntregaCloudinary({foto=fotoEntregaLocal,fetchImpl=fetch,solicitarFirmaImpl=solicitarFirmaCloudinary,subirFotoImpl=subirFotoCloudinary}={}){
+  let batchId=null,uploaded=null;
+  try{
+    if(!foto||!(foto.file instanceof File)||!['image/jpeg','image/png','image/webp'].includes(foto.file.type))throw new Error('invalid_delivery_photo');
+    batchId=crearBatchIdCloudinary();
+    const firma=await solicitarFirmaImpl(1,batchId,fetchImpl);
+    if(!firma?.uploads?.[0])throw new Error('invalid_sign_upload_response');
+    const resultado=await subirFotoImpl(foto.file,firma,firma.uploads[0],fetchImpl);
+    uploaded={
+      ...(esPublicIdCloudinaryValido(resultado?.publicId)?{publicId:resultado.publicId}:{}),
+      ...(typeof resultado?.secureUrl==='string'&&resultado.secureUrl?{secureUrl:resultado.secureUrl}:{})
+    };
+    if(!uploaded.publicId||!uploaded.secureUrl)throw new Error('invalid_delivery_upload_result');
+    return {ok:true,batchId,imagen:{publicId:uploaded.publicId,secureUrl:uploaded.secureUrl}};
+  }catch(error){
+    return {ok:false,batchId,error:codigoDiagnosticoFotos(error,'delivery_photo_upload_failed'),uploaded:uploaded?.publicId?uploaded:null};
+  }
+}
 async function subirLoteCloudinary(fotos=fotosLocales,fetchImpl=fetch,onProgress=()=>{}){
   const lote=Array.from(fotos||[]);
   let batchId=null;
