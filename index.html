@@ -521,11 +521,11 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
       <div class="foto-entrega-box">
         <div class="fl">Foto de entrega</div>
         <div id="foto-entrega-selector">
-          <label class="fotos-local-picker" for="foto-entrega-input">Seleccionar foto</label>
+          <label class="fotos-local-picker" id="foto-entrega-picker" for="foto-entrega-input">Seleccionar foto</label>
           <input class="fotos-local-input" id="foto-entrega-input" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp">
           <div class="fhint">Se utiliza exactamente una foto JPG, JPEG, PNG o WEBP.</div>
         </div>
-        <div id="foto-entrega-preview-wrap" hidden><img class="foto-entrega-preview" id="foto-entrega-preview" src="" alt="Preview de la foto de entrega"></div>
+        <div id="foto-entrega-preview-wrap" hidden><div class="foto-entrega-actual-label" id="foto-entrega-preview-label" hidden>NUEVA FOTO — REEMPLAZARÁ LA ACTUAL</div><img class="foto-entrega-preview" id="foto-entrega-preview" src="" alt="Preview de la foto de entrega"></div>
         <div id="foto-entrega-actual" hidden>
           <div class="foto-entrega-actual-label">FOTO ACTUAL</div>
           <img class="foto-entrega-preview" id="foto-entrega-actual-img" src="" alt="Foto actual de la entrega">
@@ -574,6 +574,7 @@ let fotosLocales=[],fotoLocalArrastrada=null;
 let imagenesEdicion=[],imagenesOriginales=[],modoFotosEdicion=null,imagenEdicionArrastrada=null;
 let imagenesEliminadasPendientes=[];
 let fotoEntregaLocal=null;
+let fotoEntregaRetiradaPendiente=null;
 let guardandoAuto=false,guardandoEntrega=false;
 
 async function cargar(){
@@ -1939,6 +1940,32 @@ async function guardarAltaEntregaConCloudinary({modelo,texto},{foto=fotoEntregaL
   }
   return {ok:true,data,batchId:subida.batchId};
 }
+function obtenerImagenEntregaAdministrable(entrega){
+  const imagen=entrega?.imagen;
+  return esPublicIdCloudinaryValido(imagen?.publicId)&&typeof imagen?.secureUrl==='string'&&imagen.secureUrl?{publicId:imagen.publicId,secureUrl:imagen.secureUrl}:null;
+}
+async function guardarEdicionEntregaConCloudinary(original,{modelo,texto},{foto=fotoEntregaLocal,fetchImpl=fetch,subirImpl=subirFotoEntregaCloudinary,guardarImpl=guardar,rollbackImpl=rollbackCloudinary,onSubiendo=()=>{},onGuardando=()=>{}}={}){
+  onSubiendo();
+  const subida=await subirImpl({foto,fetchImpl});
+  if(!subida.ok){
+    const rollback=subida.uploaded?.publicId?await rollbackImpl(subida.batchId,[subida.uploaded.publicId],fetchImpl):null;
+    return {...subida,rollback};
+  }
+  const data={...original,modelo,texto,foto:subida.imagen.secureUrl,imagen:{publicId:subida.imagen.publicId,secureUrl:subida.imagen.secureUrl}};
+  const entregasAnteriores=entregas;
+  entregas=entregas.map(entrega=>entrega.id===original.id?data:entrega);
+  onGuardando();
+  let guardado=false;
+  try{guardado=await guardarImpl();}catch{}
+  if(!guardado){
+    entregas=entregasAnteriores;
+    const rollback=await rollbackImpl(subida.batchId,[subida.imagen.publicId],fetchImpl);
+    return {ok:false,error:'delivery_save_failed',rollback,batchId:subida.batchId,uploaded:subida.imagen};
+  }
+  const anterior=obtenerImagenEntregaAdministrable(original);
+  fotoEntregaRetiradaPendiente=anterior&&anterior.publicId!==subida.imagen.publicId?anterior:null;
+  return {ok:true,data,batchId:subida.batchId,fotoRetirada:fotoEntregaRetiradaPendiente};
+}
 function mensajeFalloAltaEntrega(resultado){
   if(resultado?.rollback&&!resultado.rollback.ok){
     const pendientes=resultado.rollback.pending||[];
@@ -1950,13 +1977,15 @@ function mensajeFalloAltaEntrega(resultado){
 }
 function renderFotoEntregaLocal(){
   const selector=document.getElementById('foto-entrega-selector');
+  const picker=document.getElementById('foto-entrega-picker');
   const previewWrap=document.getElementById('foto-entrega-preview-wrap');
+  const previewLabel=document.getElementById('foto-entrega-preview-label');
   const preview=document.getElementById('foto-entrega-preview');
   const actualWrap=document.getElementById('foto-entrega-actual');
   const actual=document.getElementById('foto-entrega-actual-img');
-  if(!selector||!previewWrap||!preview||!actualWrap||!actual)return;
+  if(!selector||!picker||!previewWrap||!previewLabel||!preview||!actualWrap||!actual)return;
   const entrega=editEntregaId?entregas.find(item=>item.id===editEntregaId):null;
-  selector.hidden=!!entrega;previewWrap.hidden=!!entrega||!fotoEntregaLocal;actualWrap.hidden=!entrega;
+  selector.hidden=false;picker.textContent=entrega?'Cambiar foto':'Seleccionar foto';previewWrap.hidden=!fotoEntregaLocal;previewLabel.hidden=!entrega;actualWrap.hidden=!entrega;
   preview.src=fotoEntregaLocal?.url||'';
   if(entrega){actual.src=entrega.foto||entrega.imagen?.secureUrl||'';actual.hidden=!actual.src;}
   else{actual.src='';actual.hidden=false;}
@@ -2007,6 +2036,16 @@ async function guardarEntrega(){
     setGuardandoEntrega(false);cerrar('ov-form-entrega');render();showToast('✓ Entrega guardada');return;
   }
   const original=entregas.find(e=>e.id===editEntregaId);if(!original)return;
+  if(fotoEntregaLocal){
+    setGuardandoEntrega(true);
+    let resultado;
+    try{resultado=await guardarEdicionEntregaConCloudinary(original,{modelo,texto:document.getElementById('fe-texto').value.trim()},{onSubiendo:()=>actualizarEstadoGuardadoEntrega('Subiendo foto...'),onGuardando:()=>actualizarEstadoGuardadoEntrega('Guardando entrega...')});}
+    catch(error){resultado={ok:false,error:codigoDiagnosticoFotos(error,'delivery_update_failed'),rollback:null};}
+    if(!resultado.ok){
+      const mensaje=mensajeFalloAltaEntrega(resultado);actualizarEstadoGuardadoEntrega(mensaje,true);alert(mensaje);setGuardandoEntrega(false);return;
+    }
+    setGuardandoEntrega(false);cerrar('ov-form-entrega');render();showToast('✓ Entrega actualizada');return;
+  }
   const data={...original,id:original.id,modelo,texto:document.getElementById('fe-texto').value.trim(),foto:original.foto||''};
   if(original.imagen)data.imagen={...original.imagen};
   const entregasAnteriores=entregas;
