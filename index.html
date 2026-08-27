@@ -1944,7 +1944,10 @@ function obtenerImagenEntregaAdministrable(entrega){
   const imagen=entrega?.imagen;
   return esPublicIdCloudinaryValido(imagen?.publicId)&&typeof imagen?.secureUrl==='string'&&imagen.secureUrl?{publicId:imagen.publicId,secureUrl:imagen.secureUrl}:null;
 }
-async function guardarEdicionEntregaConCloudinary(original,{modelo,texto},{foto=fotoEntregaLocal,fetchImpl=fetch,subirImpl=subirFotoEntregaCloudinary,guardarImpl=guardar,rollbackImpl=rollbackCloudinary,onSubiendo=()=>{},onGuardando=()=>{}}={}){
+async function limpiarFotoEntregaRetiradaCloudinary(pendiente,imagenActiva,{fetchImpl=fetch,limpiarImpl=limpiarImagenesRetiradasCloudinary}={}){
+  return limpiarImpl(pendiente?[pendiente]:[],imagenActiva?[imagenActiva]:[],{fetchImpl});
+}
+async function guardarEdicionEntregaConCloudinary(original,{modelo,texto},{foto=fotoEntregaLocal,fetchImpl=fetch,subirImpl=subirFotoEntregaCloudinary,guardarImpl=guardar,rollbackImpl=rollbackCloudinary,limpiarRetiradaImpl=limpiarFotoEntregaRetiradaCloudinary,onSubiendo=()=>{},onGuardando=()=>{},onLimpiando=()=>{}}={}){
   onSubiendo();
   const subida=await subirImpl({foto,fetchImpl});
   if(!subida.ok){
@@ -1964,7 +1967,12 @@ async function guardarEdicionEntregaConCloudinary(original,{modelo,texto},{foto=
   }
   const anterior=obtenerImagenEntregaAdministrable(original);
   fotoEntregaRetiradaPendiente=anterior&&anterior.publicId!==subida.imagen.publicId?anterior:null;
-  return {ok:true,data,batchId:subida.batchId,fotoRetirada:fotoEntregaRetiradaPendiente};
+  onLimpiando();
+  let limpieza;
+  try{limpieza=await limpiarRetiradaImpl(fotoEntregaRetiradaPendiente,data.imagen,{fetchImpl});}
+  catch(error){limpieza={ok:false,pending:fotoEntregaRetiradaPendiente?[fotoEntregaRetiradaPendiente.publicId]:[],error:codigoDiagnosticoFotos(error,'cloudinary_cleanup_failed')};}
+  fotoEntregaRetiradaPendiente=limpieza.ok?null:fotoEntregaRetiradaPendiente;
+  return {ok:true,data,batchId:subida.batchId,fotoRetirada:fotoEntregaRetiradaPendiente,limpieza};
 }
 function mensajeFalloAltaEntrega(resultado){
   if(resultado?.rollback&&!resultado.rollback.ok){
@@ -1974,6 +1982,10 @@ function mensajeFalloAltaEntrega(resultado){
   const codigo=codigoDiagnosticoFotos({code:resultado?.error},'delivery_creation_failed');
   if(resultado?.error==='delivery_save_failed')return `No se guardó la entrega. La foto subida fue limpiada y podés reintentar.\nCódigo: ${codigo}`;
   return `No se pudo subir la foto. Revisá la conexión e intentá nuevamente.\nCódigo: ${codigo}`;
+}
+function mensajeLimpiezaFotoEntrega(resultado){
+  const publicId=resultado?.fotoRetirada?.publicId||resultado?.limpieza?.pending?.[0]||'';
+  return `El vendido se guardó correctamente, pero quedó una foto anterior pendiente de limpieza.${publicId?`\n${publicId}`:''}`;
 }
 function renderFotoEntregaLocal(){
   const selector=document.getElementById('foto-entrega-selector');
@@ -2039,10 +2051,13 @@ async function guardarEntrega(){
   if(fotoEntregaLocal){
     setGuardandoEntrega(true);
     let resultado;
-    try{resultado=await guardarEdicionEntregaConCloudinary(original,{modelo,texto:document.getElementById('fe-texto').value.trim()},{onSubiendo:()=>actualizarEstadoGuardadoEntrega('Subiendo foto...'),onGuardando:()=>actualizarEstadoGuardadoEntrega('Guardando entrega...')});}
+    try{resultado=await guardarEdicionEntregaConCloudinary(original,{modelo,texto:document.getElementById('fe-texto').value.trim()},{onSubiendo:()=>actualizarEstadoGuardadoEntrega('Subiendo foto...'),onGuardando:()=>actualizarEstadoGuardadoEntrega('Guardando entrega...'),onLimpiando:()=>actualizarEstadoGuardadoEntrega('Limpiando foto anterior...')});}
     catch(error){resultado={ok:false,error:codigoDiagnosticoFotos(error,'delivery_update_failed'),rollback:null};}
     if(!resultado.ok){
       const mensaje=mensajeFalloAltaEntrega(resultado);actualizarEstadoGuardadoEntrega(mensaje,true);alert(mensaje);setGuardandoEntrega(false);return;
+    }
+    if(resultado.limpieza&&!resultado.limpieza.ok){
+      const mensaje=mensajeLimpiezaFotoEntrega(resultado);actualizarEstadoGuardadoEntrega(mensaje,true);alert(mensaje);
     }
     setGuardandoEntrega(false);cerrar('ov-form-entrega');render();showToast('✓ Entrega actualizada');return;
   }
