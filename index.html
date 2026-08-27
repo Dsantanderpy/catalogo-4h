@@ -1645,6 +1645,17 @@ async function resolverCleanupPendiente(publicId,{deleteDocImpl=deleteDoc,docImp
   await deleteDocImpl(docImpl(collectionRef,id));
   return {ok:true,id};
 }
+async function persistirPendientesCleanupPostFirestore({tipo,referenciaId,limpieza},{persistirImpl=persistirCleanupPendiente}={}){
+  const pendientes=[...new Set(Array.from(limpieza?.pending||[]).filter(esPublicIdCloudinaryValido))];
+  if(limpieza?.ok||!pendientes.length)return {ok:true,persistidos:[],fallidos:[]};
+  const ultimoError=codigoDiagnosticoFotos({code:limpieza?.error},'cloudinary_cleanup_failed');
+  const persistidos=[],fallidos=[];
+  for(const publicId of pendientes){
+    try{await persistirImpl({tipo,referenciaId,publicId,ultimoError,estado:'pendiente'});persistidos.push(publicId);}
+    catch(error){fallidos.push({publicId,error:codigoDiagnosticoFotos(error,'cleanup_queue_persistence_failed')});}
+  }
+  return {ok:fallidos.length===0,persistidos,fallidos};
+}
 function validarEstadoImagenesEdicion(edicion=imagenesEdicion){
   const entradas=Array.from(edicion||[]);
   validarCantidadFotosCloudinary(entradas.length);
@@ -1749,7 +1760,7 @@ async function prepararPersistenciaImagenesEdicion({fetchImpl=fetch,subirNuevasI
     return {ok:false,batchId:subida.batchId,error:codigoDiagnosticoFotos(error,'invalid_final_photos'),nuevasSubidas:subida.nuevasSubidas,rollback};
   }
 }
-async function guardarEdicionAdministradaConFotos(dataFormulario,fechaIngreso,comisionVenta,{fetchImpl=fetch,prepararImpl=prepararPersistenciaImagenesEdicion,guardarImpl=guardarEdicionConFinanzas,rollbackImpl=rollbackResultadoSubida,limpiarRetiradasImpl=limpiarImagenesRetiradasCloudinary,onGuardando=()=>{},onLimpiando=()=>{}}={}){
+async function guardarEdicionAdministradaConFotos(dataFormulario,fechaIngreso,comisionVenta,{fetchImpl=fetch,prepararImpl=prepararPersistenciaImagenesEdicion,guardarImpl=guardarEdicionConFinanzas,rollbackImpl=rollbackResultadoSubida,limpiarRetiradasImpl=limpiarImagenesRetiradasCloudinary,persistirPendientesImpl=persistirPendientesCleanupPostFirestore,onGuardando=()=>{},onLimpiando=()=>{}}={}){
   if(!editId||modoFotosEdicion!=='administrado')return {ok:false,error:'photo_edit_not_managed'};
   const preparacion=await prepararImpl({fetchImpl});
   if(!preparacion.ok)return preparacion;
@@ -1771,7 +1782,8 @@ async function guardarEdicionAdministradaConFotos(dataFormulario,fechaIngreso,co
   try{limpieza=await limpiarRetiradasImpl(imagenesEliminadasPendientes,data.imagenes,{fetchImpl});}
   catch(error){limpieza={ok:false,pending:obtenerPublicIdsLimpiezaEdicion(imagenesEliminadasPendientes,data.imagenes),error:codigoDiagnosticoFotos(error,'cloudinary_cleanup_failed')};}
   imagenesEliminadasPendientes=limpieza.ok?[]:[...limpieza.pending];
-  return {...preparacion,ok:true,data,limpieza};
+  const persistenciaPendientes=await persistirPendientesImpl({tipo:'vehiculo_edicion_cleanup',referenciaId:data.id,limpieza});
+  return {...preparacion,ok:true,data,limpieza,persistenciaPendientes};
 }
 async function guardarAltaNuevaConCloudinary(data,fechaIngreso,comisionVenta,{fetchImpl=fetch,guardarAltaImpl=guardarAltaConFinanzas}={}){
   const fotosSeleccionadas=[...fotosLocales];
@@ -1825,7 +1837,7 @@ async function limpiarFotosVehiculoEliminadoCloudinary(publicIds,{fetchImpl=fetc
   if(ids.length<1||ids.length>10||!ids.every(esPublicIdCloudinaryValido))return {ok:false,pending:ids.filter(esPublicIdCloudinaryValido),error:'invalid_vehicle_cleanup_request',enviados:[]};
   return limpiarImpl(ids,[],{fetchImpl});
 }
-async function eliminarAutoTransaccional(id,{guardarImpl=guardar,limpiarImpl=limpiarFotosVehiculoEliminadoCloudinary,fetchImpl=fetch}={}){
+async function eliminarAutoTransaccional(id,{guardarImpl=guardar,limpiarImpl=limpiarFotosVehiculoEliminadoCloudinary,persistirPendientesImpl=persistirPendientesCleanupPostFirestore,fetchImpl=fetch}={}){
   if(autosEliminandose.has(id))return {ok:false,error:'vehicle_deletion_in_progress'};
   const original=autos.find(auto=>auto.id===id);
   if(!original)return {ok:false,error:'vehicle_not_found'};
@@ -1846,7 +1858,9 @@ async function eliminarAutoTransaccional(id,{guardarImpl=guardar,limpiarImpl=lim
     const completa=!!limpieza?.ok&&clasificacion.metadataInvalida.length===0;
     if(completa)limpiarPendienteImagenesVehiculoEliminado(id);
     else guardarPendienteImagenesVehiculoEliminado(id,pendientes,clasificacion.metadataInvalida,limpieza?.error||(clasificacion.metadataInvalida.length?'invalid_vehicle_image_metadata':'cloudinary_cleanup_failed'));
-    return {ok:true,tipo:clasificacion.tipo,limpieza:{...limpieza,ok:completa,pending:pendientes,metadataInvalida:clasificacion.metadataInvalida},publicIds:ids};
+    const limpiezaFinal={...limpieza,ok:completa,pending:pendientes,metadataInvalida:clasificacion.metadataInvalida};
+    const persistenciaPendientes=await persistirPendientesImpl({tipo:'vehiculo_eliminacion_cleanup',referenciaId:id,limpieza:limpiezaFinal});
+    return {ok:true,tipo:clasificacion.tipo,limpieza:limpiezaFinal,publicIds:ids,persistenciaPendientes};
   }finally{autosEliminandose.delete(id);}
 }
 function mensajeFalloAlta(resultado){
@@ -1879,7 +1893,8 @@ function mensajeFalloEdicionFotos(resultado){
 }
 function mensajeLimpiezaPendiente(resultado){
   const pendientes=Array.from(resultado?.limpieza?.pending||[]);
-  return `El vehículo se guardó correctamente, pero quedaron ${pendientes.length} imágenes pendientes de limpieza.${pendientes.length?`\n${pendientes.join('\n')}`:''}`;
+  const sinPersistir=Array.from(resultado?.persistenciaPendientes?.fallidos||[]).map(item=>item.publicId).filter(esPublicIdCloudinaryValido);
+  return `El vehículo se guardó correctamente, pero quedaron ${pendientes.length} imágenes pendientes de limpieza.${pendientes.length?`\n${pendientes.join('\n')}`:''}${sinPersistir.length?`\nAdemás, no se pudieron registrar persistentemente:\n${sinPersistir.join('\n')}`:''}`;
 }
 
 async function guardarAuto(){
@@ -1953,9 +1968,10 @@ async function eliminarAuto(id){
   if(resultado.limpieza&&!resultado.limpieza.ok){
     const pendientes=resultado.limpieza.pending||[];
     const metadataInvalida=resultado.limpieza.metadataInvalida||[];
+    const sinPersistir=Array.from(resultado?.persistenciaPendientes?.fallidos||[]).map(item=>item.publicId).filter(esPublicIdCloudinaryValido);
     const mensaje=metadataInvalida.length
-      ?`El vehículo fue eliminado correctamente, pero la limpieza de sus fotos no pudo completarse totalmente.${pendientes.length?`\nFotos pendientes:\n${pendientes.join('\n')}`:''}`
-      :`El vehículo fue eliminado correctamente, pero quedaron fotos pendientes de limpieza.${pendientes.length?`\n${pendientes.join('\n')}`:''}`;
+      ?`El vehículo fue eliminado correctamente, pero la limpieza de sus fotos no pudo completarse totalmente.${pendientes.length?`\nFotos pendientes:\n${pendientes.join('\n')}`:''}${sinPersistir.length?`\nAdemás, no se pudieron registrar persistentemente:\n${sinPersistir.join('\n')}`:''}`
+      :`El vehículo fue eliminado correctamente, pero quedaron fotos pendientes de limpieza.${pendientes.length?`\n${pendientes.join('\n')}`:''}${sinPersistir.length?`\nAdemás, no se pudieron registrar persistentemente:\n${sinPersistir.join('\n')}`:''}`;
     alert(mensaje);showToast('⚠ Vehículo eliminado con limpieza pendiente');return;
   }
   showToast('✓ Vehículo eliminado');
@@ -2114,7 +2130,7 @@ function guardarPendienteFotoEntregaEliminada(entregaId,recurso,error='cloudinar
 function limpiarPendienteFotoEntregaEliminada(publicId){
   fotosEntregasEliminadasPendientes=fotosEntregasEliminadasPendientes.filter(item=>item.publicId!==publicId);
 }
-async function eliminarEntregaTransaccional(id,{guardarImpl=guardar,limpiarImpl=limpiarFotoEntregaEliminadaCloudinary,fetchImpl=fetch}={}){
+async function eliminarEntregaTransaccional(id,{guardarImpl=guardar,limpiarImpl=limpiarFotoEntregaEliminadaCloudinary,persistirPendientesImpl=persistirPendientesCleanupPostFirestore,fetchImpl=fetch}={}){
   if(entregasEliminandose.has(id))return {ok:false,error:'delivery_deletion_in_progress'};
   const original=entregas.find(entrega=>entrega.id===id);
   if(!original)return {ok:false,error:'delivery_not_found'};
@@ -2137,10 +2153,11 @@ async function eliminarEntregaTransaccional(id,{guardarImpl=guardar,limpiarImpl=
     catch(error){limpieza={ok:false,pending:[recurso.publicId],error:codigoDiagnosticoFotos(error,'cloudinary_cleanup_failed'),enviados:[]};}
     if(limpieza?.ok)limpiarPendienteFotoEntregaEliminada(recurso.publicId);
     else guardarPendienteFotoEntregaEliminada(id,recurso,limpieza?.error);
-    return {ok:true,limpieza,recurso,tipo:'administrada'};
+    const persistenciaPendientes=await persistirPendientesImpl({tipo:'vendido_eliminacion_cleanup',referenciaId:id,limpieza});
+    return {ok:true,limpieza,recurso,tipo:'administrada',persistenciaPendientes};
   }finally{entregasEliminandose.delete(id);}
 }
-async function guardarEdicionEntregaConCloudinary(original,{modelo,texto},{foto=fotoEntregaLocal,fetchImpl=fetch,subirImpl=subirFotoEntregaCloudinary,guardarImpl=guardar,rollbackImpl=rollbackCloudinary,limpiarRetiradaImpl=limpiarFotoEntregaRetiradaCloudinary,onSubiendo=()=>{},onGuardando=()=>{},onLimpiando=()=>{}}={}){
+async function guardarEdicionEntregaConCloudinary(original,{modelo,texto},{foto=fotoEntregaLocal,fetchImpl=fetch,subirImpl=subirFotoEntregaCloudinary,guardarImpl=guardar,rollbackImpl=rollbackCloudinary,limpiarRetiradaImpl=limpiarFotoEntregaRetiradaCloudinary,persistirPendientesImpl=persistirPendientesCleanupPostFirestore,onSubiendo=()=>{},onGuardando=()=>{},onLimpiando=()=>{}}={}){
   onSubiendo();
   const subida=await subirImpl({foto,fetchImpl});
   if(!subida.ok){
@@ -2165,7 +2182,8 @@ async function guardarEdicionEntregaConCloudinary(original,{modelo,texto},{foto=
   try{limpieza=await limpiarRetiradaImpl(fotoEntregaRetiradaPendiente,data.imagen,{fetchImpl});}
   catch(error){limpieza={ok:false,pending:fotoEntregaRetiradaPendiente?[fotoEntregaRetiradaPendiente.publicId]:[],error:codigoDiagnosticoFotos(error,'cloudinary_cleanup_failed')};}
   fotoEntregaRetiradaPendiente=limpieza.ok?null:fotoEntregaRetiradaPendiente;
-  return {ok:true,data,batchId:subida.batchId,fotoRetirada:fotoEntregaRetiradaPendiente,limpieza};
+  const persistenciaPendientes=await persistirPendientesImpl({tipo:'vendido_sustitucion_cleanup',referenciaId:original.id,limpieza});
+  return {ok:true,data,batchId:subida.batchId,fotoRetirada:fotoEntregaRetiradaPendiente,limpieza,persistenciaPendientes};
 }
 function mensajeFalloAltaEntrega(resultado){
   if(resultado?.rollback&&!resultado.rollback.ok){
@@ -2178,7 +2196,8 @@ function mensajeFalloAltaEntrega(resultado){
 }
 function mensajeLimpiezaFotoEntrega(resultado){
   const publicId=resultado?.fotoRetirada?.publicId||resultado?.limpieza?.pending?.[0]||'';
-  return `El vendido se guardó correctamente, pero quedó una foto anterior pendiente de limpieza.${publicId?`\n${publicId}`:''}`;
+  const sinPersistir=Array.from(resultado?.persistenciaPendientes?.fallidos||[]).map(item=>item.publicId).filter(esPublicIdCloudinaryValido);
+  return `El vendido se guardó correctamente, pero quedó una foto anterior pendiente de limpieza.${publicId?`\n${publicId}`:''}${sinPersistir.length?`\nAdemás, no se pudo registrar persistentemente:\n${sinPersistir.join('\n')}`:''}`;
 }
 function renderFotoEntregaLocal(){
   const selector=document.getElementById('foto-entrega-selector');
@@ -2275,9 +2294,10 @@ async function eliminarEntrega(id){
   if(resultado.limpieza&&!resultado.limpieza.ok){
     const publicId=esPublicIdCloudinaryValido(resultado.recurso?.publicId)?resultado.recurso.publicId:'';
     const metadataInvalida=resultado.limpieza.error==='invalid_delivery_image_metadata';
+    const sinPersistir=Array.from(resultado?.persistenciaPendientes?.fallidos||[]).map(item=>item.publicId).filter(esPublicIdCloudinaryValido);
     const mensaje=metadataInvalida
       ?'La entrega fue eliminada correctamente, pero la foto no pudo limpiarse de forma segura porque su metadata es inválida.'
-      :`La entrega fue eliminada correctamente, pero quedó una foto pendiente de limpieza.${publicId?`\n${publicId}`:''}`;
+      :`La entrega fue eliminada correctamente, pero quedó una foto pendiente de limpieza.${publicId?`\n${publicId}`:''}${sinPersistir.length?`\nAdemás, no se pudo registrar persistentemente:\n${sinPersistir.join('\n')}`:''}`;
     alert(mensaje);showToast('⚠ Entrega eliminada con limpieza pendiente');return;
   }
   showToast('✓ Entrega eliminada');
