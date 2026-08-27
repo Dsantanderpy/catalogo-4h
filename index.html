@@ -513,7 +513,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 
 <div class="ov" id="ov-form-entrega">
   <div class="modal">
-    <button class="mc" onclick="cerrar('ov-form-entrega')">✕</button>
+    <button class="mc" id="fe-cerrar" onclick="cerrar('ov-form-entrega')">✕</button>
     <div class="mt">REGISTRAR ENTREGA</div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div><div class="fl">Modelo del auto</div><input class="fi" id="fe-modelo" placeholder="VW Gol 2019"></div>
@@ -533,7 +533,8 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
         <input id="fe-foto" type="hidden">
       </div>
     </div>
-    <div class="ff"><button class="bout" onclick="cerrar('ov-form-entrega')">Cancelar</button><button class="brojo" onclick="guardarEntrega()">Guardar</button></div>
+    <div class="fm-guardar-estado" id="fe-guardar-estado" role="status" aria-live="polite"></div>
+    <div class="ff"><button class="bout" id="fe-cancelar" onclick="cerrar('ov-form-entrega')">Cancelar</button><button class="brojo" id="fe-guardar" onclick="guardarEntrega()">Guardar</button></div>
   </div>
 </div>
 
@@ -573,7 +574,7 @@ let fotosLocales=[],fotoLocalArrastrada=null;
 let imagenesEdicion=[],imagenesOriginales=[],modoFotosEdicion=null,imagenEdicionArrastrada=null;
 let imagenesEliminadasPendientes=[];
 let fotoEntregaLocal=null;
-let guardandoAuto=false;
+let guardandoAuto=false,guardandoEntrega=false;
 
 async function cargar(){
   try{const s=await getDoc(DOC);if(s.exists()){const d=s.data();autos=d.autos||[];entregas=d.entregas||[];}cargaOk=true;}catch(e){console.error(e);alert('No se pudo cargar el catálogo. Los guardados quedan bloqueados para proteger los datos. Revisá tu conexión e intentá recargar la página.');}
@@ -1910,6 +1911,43 @@ async function guardarDatosVenta(id){
   showToast('✓ Datos de venta guardados');
 }
 
+function actualizarEstadoGuardadoEntrega(mensaje,error=false){
+  const estado=document.getElementById('fe-guardar-estado');if(!estado)return;
+  estado.textContent=mensaje;estado.classList.toggle('error',error);
+}
+function setGuardandoEntrega(activo){
+  guardandoEntrega=activo;
+  ['fe-guardar','fe-cancelar','fe-cerrar'].forEach(id=>{const boton=document.getElementById(id);if(boton)boton.disabled=activo;});
+}
+async function guardarAltaEntregaConCloudinary({modelo,texto},{foto=fotoEntregaLocal,fetchImpl=fetch,subirImpl=subirFotoEntregaCloudinary,guardarImpl=guardar,rollbackImpl=rollbackCloudinary,onSubiendo=()=>{},onGuardando=()=>{}}={}){
+  onSubiendo();
+  const subida=await subirImpl({foto,fetchImpl});
+  if(!subida.ok){
+    const rollback=subida.uploaded?.publicId?await rollbackImpl(subida.batchId,[subida.uploaded.publicId],fetchImpl):null;
+    return {...subida,rollback};
+  }
+  const data={id:Date.now().toString(),modelo,texto,foto:subida.imagen.secureUrl,imagen:{publicId:subida.imagen.publicId,secureUrl:subida.imagen.secureUrl}};
+  const entregasAnteriores=entregas;
+  entregas=[data,...entregas];
+  onGuardando();
+  let guardado=false;
+  try{guardado=await guardarImpl();}catch{}
+  if(!guardado){
+    entregas=entregasAnteriores;
+    const rollback=await rollbackImpl(subida.batchId,[subida.imagen.publicId],fetchImpl);
+    return {ok:false,error:'delivery_save_failed',rollback,batchId:subida.batchId,uploaded:subida.imagen};
+  }
+  return {ok:true,data,batchId:subida.batchId};
+}
+function mensajeFalloAltaEntrega(resultado){
+  if(resultado?.rollback&&!resultado.rollback.ok){
+    const pendientes=resultado.rollback.pending||[];
+    return `No se guardó la entrega. Quedaron ${pendientes.length} imágenes pendientes de limpieza:\n${pendientes.join('\n')}`;
+  }
+  const codigo=codigoDiagnosticoFotos({code:resultado?.error},'delivery_creation_failed');
+  if(resultado?.error==='delivery_save_failed')return `No se guardó la entrega. La foto subida fue limpiada y podés reintentar.\nCódigo: ${codigo}`;
+  return `No se pudo subir la foto. Revisá la conexión e intentá nuevamente.\nCódigo: ${codigo}`;
+}
 function renderFotoEntregaLocal(){
   const selector=document.getElementById('foto-entrega-selector');
   const previewWrap=document.getElementById('foto-entrega-preview-wrap');
@@ -1942,6 +1980,7 @@ function limpiarFotoEntregaLocal(){
 function abrirFormEntrega(id){
   if(!requireSuperAdmin())return;
   limpiarFotoEntregaLocal();
+  actualizarEstadoGuardadoEntrega('');
   const v=id?entregas.find(x=>x.id===id):null;
   editEntregaId=v?v.id:null;
   document.getElementById('fe-modelo').value=v?.modelo||'';
@@ -1953,11 +1992,19 @@ function abrirFormEntrega(id){
 
 async function guardarEntrega(){
   if(!requireSuperAdmin())return;
+  if(guardandoEntrega)return;
   const modelo=document.getElementById('fe-modelo').value.trim();
   if(!modelo){showToast('⚠ Ingresá el modelo');return;}
   if(!editEntregaId){
     if(!fotoEntregaLocal){showToast('⚠ Seleccioná una foto para la entrega');return;}
-    showToast('La foto está preparada. La carga segura se habilitará en el siguiente paso.');return;
+    setGuardandoEntrega(true);
+    let resultado;
+    try{resultado=await guardarAltaEntregaConCloudinary({modelo,texto:document.getElementById('fe-texto').value.trim()},{onSubiendo:()=>actualizarEstadoGuardadoEntrega('Subiendo foto...'),onGuardando:()=>actualizarEstadoGuardadoEntrega('Guardando entrega...')});}
+    catch(error){resultado={ok:false,error:codigoDiagnosticoFotos(error,'delivery_creation_failed'),rollback:null};}
+    if(!resultado.ok){
+      const mensaje=mensajeFalloAltaEntrega(resultado);actualizarEstadoGuardadoEntrega(mensaje,true);alert(mensaje);setGuardandoEntrega(false);return;
+    }
+    setGuardandoEntrega(false);cerrar('ov-form-entrega');render();showToast('✓ Entrega guardada');return;
   }
   const original=entregas.find(e=>e.id===editEntregaId);if(!original)return;
   const data={...original,id:original.id,modelo,texto:document.getElementById('fe-texto').value.trim(),foto:original.foto||''};
@@ -2052,6 +2099,7 @@ function limpiarURLVehiculo(){
 }
 function cerrar(id){
   if(id==='ov-form'&&guardandoAuto)return;
+  if(id==='ov-form-entrega'&&guardandoEntrega)return;
   document.getElementById(id).classList.remove('on');
   if(id==='ov-form'){limpiarFotosLocales();limpiarImagenesEdicion();}
   if(id==='ov-form-entrega')limpiarFotoEntregaLocal();
