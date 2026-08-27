@@ -216,6 +216,9 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .foto-local-action:disabled{opacity:0.3;cursor:not-allowed;}
 .fotos-local-empty{margin-top:12px;padding:18px;border:1px dashed var(--borde);border-radius:8px;color:var(--apagado);font-size:12px;text-align:center;}
 .fotos-historicas-aviso{padding:12px;border:1px solid var(--borde);border-radius:8px;background:var(--gris2);color:var(--apagado);font-size:12px;}
+.foto-entrega-box{padding:12px;background:var(--negro);border:1px solid var(--borde);border-radius:8px;}
+.foto-entrega-preview{display:block;width:100%;height:240px;object-fit:cover;border-radius:7px;background:var(--gris2);margin-top:12px;}
+.foto-entrega-actual-label{font-size:10px;color:var(--dorado);font-weight:700;letter-spacing:1px;margin-bottom:8px;}
 .fm-guardar-estado{min-height:18px;margin-top:12px;color:var(--dorado);font-size:12px;text-align:right;}
 .fm-guardar-estado.error{color:#e03b3b;}
 .btns{display:flex;gap:8px;flex-wrap:wrap;}
@@ -515,7 +518,20 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
     <div style="display:flex;flex-direction:column;gap:12px">
       <div><div class="fl">Modelo del auto</div><input class="fi" id="fe-modelo" placeholder="VW Gol 2019"></div>
       <div><div class="fl">Texto (opcional)</div><textarea class="fi" id="fe-texto" rows="3" placeholder="Gracias por confiar en nosotros..."></textarea></div>
-      <div><div class="fl">Foto de entrega — Direct link imgbb.com</div><input class="fi" id="fe-foto" type="url" placeholder="https://i.ibb.co/..."><div class="fhint">Foto del cliente con el auto.</div></div>
+      <div class="foto-entrega-box">
+        <div class="fl">Foto de entrega</div>
+        <div id="foto-entrega-selector">
+          <label class="fotos-local-picker" for="foto-entrega-input">Seleccionar foto</label>
+          <input class="fotos-local-input" id="foto-entrega-input" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp">
+          <div class="fhint">Se utiliza exactamente una foto JPG, JPEG, PNG o WEBP.</div>
+        </div>
+        <div id="foto-entrega-preview-wrap" hidden><img class="foto-entrega-preview" id="foto-entrega-preview" src="" alt="Preview de la foto de entrega"></div>
+        <div id="foto-entrega-actual" hidden>
+          <div class="foto-entrega-actual-label">FOTO ACTUAL</div>
+          <img class="foto-entrega-preview" id="foto-entrega-actual-img" src="" alt="Foto actual de la entrega">
+        </div>
+        <input id="fe-foto" type="hidden">
+      </div>
     </div>
     <div class="ff"><button class="bout" onclick="cerrar('ov-form-entrega')">Cancelar</button><button class="brojo" onclick="guardarEntrega()">Guardar</button></div>
   </div>
@@ -556,6 +572,7 @@ let autos=[],entregas=[],finanzas=[],isAdmin=false,currentUser=null,currentRole=
 let fotosLocales=[],fotoLocalArrastrada=null;
 let imagenesEdicion=[],imagenesOriginales=[],modoFotosEdicion=null,imagenEdicionArrastrada=null;
 let imagenesEliminadasPendientes=[];
+let fotoEntregaLocal=null;
 let guardandoAuto=false;
 
 async function cargar(){
@@ -1875,13 +1892,44 @@ async function guardarDatosVenta(id){
   showToast('✓ Datos de venta guardados');
 }
 
+function renderFotoEntregaLocal(){
+  const selector=document.getElementById('foto-entrega-selector');
+  const previewWrap=document.getElementById('foto-entrega-preview-wrap');
+  const preview=document.getElementById('foto-entrega-preview');
+  const actualWrap=document.getElementById('foto-entrega-actual');
+  const actual=document.getElementById('foto-entrega-actual-img');
+  if(!selector||!previewWrap||!preview||!actualWrap||!actual)return;
+  const entrega=editEntregaId?entregas.find(item=>item.id===editEntregaId):null;
+  selector.hidden=!!entrega;previewWrap.hidden=!!entrega||!fotoEntregaLocal;actualWrap.hidden=!entrega;
+  preview.src=fotoEntregaLocal?.url||'';
+  if(entrega){actual.src=entrega.foto||entrega.imagen?.secureUrl||'';actual.hidden=!actual.src;}
+  else{actual.src='';actual.hidden=false;}
+}
+function seleccionarFotoEntregaLocal(evento){
+  const input=evento.target,file=input.files?.[0]||null;
+  if(!file)return;
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)){
+    input.value='';showToast('Solo se aceptan fotos JPG, JPEG, PNG o WEBP');return;
+  }
+  if(fotoEntregaLocal)URL.revokeObjectURL(fotoEntregaLocal.url);
+  fotoEntregaLocal={file,url:URL.createObjectURL(file)};
+  input.value='';renderFotoEntregaLocal();
+}
+function limpiarFotoEntregaLocal(){
+  if(fotoEntregaLocal)URL.revokeObjectURL(fotoEntregaLocal.url);
+  fotoEntregaLocal=null;
+  const input=document.getElementById('foto-entrega-input');if(input)input.value='';
+  renderFotoEntregaLocal();
+}
 function abrirFormEntrega(id){
   if(!requireSuperAdmin())return;
+  limpiarFotoEntregaLocal();
   const v=id?entregas.find(x=>x.id===id):null;
   editEntregaId=v?v.id:null;
   document.getElementById('fe-modelo').value=v?.modelo||'';
   document.getElementById('fe-texto').value=v?.texto||'';
   document.getElementById('fe-foto').value=v?.foto||'';
+  renderFotoEntregaLocal();
   document.getElementById('ov-form-entrega').classList.add('on');
 }
 
@@ -1889,9 +1937,15 @@ async function guardarEntrega(){
   if(!requireSuperAdmin())return;
   const modelo=document.getElementById('fe-modelo').value.trim();
   if(!modelo){showToast('⚠ Ingresá el modelo');return;}
-  const data={id:editEntregaId||Date.now().toString(),modelo,texto:document.getElementById('fe-texto').value.trim(),foto:document.getElementById('fe-foto').value.trim()};
+  if(!editEntregaId){
+    if(!fotoEntregaLocal){showToast('⚠ Seleccioná una foto para la entrega');return;}
+    showToast('La foto está preparada. La carga segura se habilitará en el siguiente paso.');return;
+  }
+  const original=entregas.find(e=>e.id===editEntregaId);if(!original)return;
+  const data={...original,id:original.id,modelo,texto:document.getElementById('fe-texto').value.trim(),foto:original.foto||''};
+  if(original.imagen)data.imagen={...original.imagen};
   const entregasAnteriores=entregas;
-  entregas=editEntregaId?entregas.map(e=>e.id===editEntregaId?data:e):[data,...entregas];
+  entregas=entregas.map(e=>e.id===editEntregaId?data:e);
   if(!await guardar()){entregas=entregasAnteriores;return;}
   cerrar('ov-form-entrega');render();
   showToast('✓ Entrega guardada');
@@ -1982,6 +2036,7 @@ function cerrar(id){
   if(id==='ov-form'&&guardandoAuto)return;
   document.getElementById(id).classList.remove('on');
   if(id==='ov-form'){limpiarFotosLocales();limpiarImagenesEdicion();}
+  if(id==='ov-form-entrega')limpiarFotoEntregaLocal();
   if(id==='ov-ficha'&&fichaDesdeDeepLink){
     fichaDesdeDeepLink=false;
     limpiarURLVehiculo();
@@ -1992,6 +2047,7 @@ function cerrar(id){
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2600);}
 
 document.querySelectorAll('.ov,.foto-full-ov').forEach(ov=>ov.addEventListener('click',e=>{if(e.target===ov)cerrar(ov.id);}));
+document.getElementById('foto-entrega-input').addEventListener('change',seleccionarFotoEntregaLocal);
 
 window.goSec=goSec;window.abrirLogin=abrirLogin;window.doLogin=doLogin;window.salirAdmin=salirAdmin;
 window.abrirForm=abrirForm;window.guardarAuto=guardarAuto;window.eliminarAuto=eliminarAuto;
