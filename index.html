@@ -575,6 +575,8 @@ let imagenesEdicion=[],imagenesOriginales=[],modoFotosEdicion=null,imagenEdicion
 let imagenesEliminadasPendientes=[];
 let fotoEntregaLocal=null;
 let fotoEntregaRetiradaPendiente=null;
+let fotosEntregasEliminadasPendientes=[];
+const entregasEliminandose=new Set();
 let guardandoAuto=false,guardandoEntrega=false;
 
 async function cargar(){
@@ -1947,6 +1949,39 @@ function obtenerImagenEntregaAdministrable(entrega){
 async function limpiarFotoEntregaRetiradaCloudinary(pendiente,imagenActiva,{fetchImpl=fetch,limpiarImpl=limpiarImagenesRetiradasCloudinary}={}){
   return limpiarImpl(pendiente?[pendiente]:[],imagenActiva?[imagenActiva]:[],{fetchImpl});
 }
+async function limpiarFotoEntregaEliminadaCloudinary(imagen,{fetchImpl=fetch,limpiarImpl=limpiarImagenesRetiradasCloudinary}={}){
+  if(!obtenerImagenEntregaAdministrable({imagen}))return {ok:false,pending:[],error:'invalid_delivery_image',enviados:[]};
+  return limpiarImpl([imagen],[],{fetchImpl});
+}
+function guardarPendienteFotoEntregaEliminada(entregaId,imagen,error='cloudinary_cleanup_failed'){
+  if(!esPublicIdCloudinaryValido(imagen?.publicId))return;
+  fotosEntregasEliminadasPendientes=fotosEntregasEliminadasPendientes.filter(item=>item.publicId!==imagen.publicId);
+  fotosEntregasEliminadasPendientes.push({entregaId,publicId:imagen.publicId,secureUrl:imagen.secureUrl||'',error});
+}
+function limpiarPendienteFotoEntregaEliminada(publicId){
+  fotosEntregasEliminadasPendientes=fotosEntregasEliminadasPendientes.filter(item=>item.publicId!==publicId);
+}
+async function eliminarEntregaTransaccional(id,{guardarImpl=guardar,limpiarImpl=limpiarFotoEntregaEliminadaCloudinary,fetchImpl=fetch}={}){
+  if(entregasEliminandose.has(id))return {ok:false,error:'delivery_deletion_in_progress'};
+  const original=entregas.find(entrega=>entrega.id===id);
+  if(!original)return {ok:false,error:'delivery_not_found'};
+  entregasEliminandose.add(id);
+  const entregasAnteriores=entregas.map(entrega=>({...entrega,...(entrega.imagen?{imagen:{...entrega.imagen}}:{})}));
+  const imagen=obtenerImagenEntregaAdministrable(original);
+  try{
+    entregas=entregas.filter(entrega=>entrega.id!==id);
+    let guardado=false;
+    try{guardado=await guardarImpl();}catch{}
+    if(!guardado){entregas=entregasAnteriores;return {ok:false,error:'delivery_deletion_save_failed'};}
+    if(!imagen)return {ok:true,limpieza:null,imagen:null};
+    let limpieza;
+    try{limpieza=await limpiarImpl(imagen,{fetchImpl});}
+    catch(error){limpieza={ok:false,pending:[imagen.publicId],error:codigoDiagnosticoFotos(error,'cloudinary_cleanup_failed'),enviados:[]};}
+    if(limpieza?.ok)limpiarPendienteFotoEntregaEliminada(imagen.publicId);
+    else guardarPendienteFotoEntregaEliminada(id,imagen,limpieza?.error);
+    return {ok:true,limpieza,imagen};
+  }finally{entregasEliminandose.delete(id);}
+}
 async function guardarEdicionEntregaConCloudinary(original,{modelo,texto},{foto=fotoEntregaLocal,fetchImpl=fetch,subirImpl=subirFotoEntregaCloudinary,guardarImpl=guardar,rollbackImpl=rollbackCloudinary,limpiarRetiradaImpl=limpiarFotoEntregaRetiradaCloudinary,onSubiendo=()=>{},onGuardando=()=>{},onLimpiando=()=>{}}={}){
   onSubiendo();
   const subida=await subirImpl({foto,fetchImpl});
@@ -2070,7 +2105,22 @@ async function guardarEntrega(){
   showToast('✓ Entrega guardada');
 }
 
-async function eliminarEntrega(id){if(!requireSuperAdmin())return;if(!confirm('¿Eliminar?'))return;const entregasAnteriores=entregas;entregas=entregas.filter(e=>e.id!==id);if(!await guardar()){entregas=entregasAnteriores;return;}render();showToast('Eliminado');}
+async function eliminarEntrega(id){
+  if(!requireSuperAdmin()||entregasEliminandose.has(id))return;
+  if(!confirm('¿Eliminar?'))return;
+  const resultado=await eliminarEntregaTransaccional(id);
+  if(!resultado.ok){
+    if(resultado.error==='delivery_deletion_save_failed')alert('No se pudo eliminar la entrega. El registro y su foto permanecen sin cambios.');
+    return;
+  }
+  render();
+  if(resultado.limpieza&&!resultado.limpieza.ok){
+    const publicId=resultado.imagen?.publicId||'';
+    const mensaje=`La entrega fue eliminada correctamente, pero quedó una foto pendiente de limpieza.${publicId?`\n${publicId}`:''}`;
+    alert(mensaje);showToast('⚠ Entrega eliminada con limpieza pendiente');return;
+  }
+  showToast('✓ Entrega eliminada');
+}
 
 function verEntrega(id){
   const v=entregas.find(x=>x.id===id);if(!v)return;
