@@ -573,6 +573,8 @@ let autos=[],entregas=[],finanzas=[],isAdmin=false,currentUser=null,currentRole=
 let fotosLocales=[],fotoLocalArrastrada=null;
 let imagenesEdicion=[],imagenesOriginales=[],modoFotosEdicion=null,imagenEdicionArrastrada=null;
 let imagenesEliminadasPendientes=[];
+let imagenesVehiculosEliminadosPendientes=[];
+const autosEliminandose=new Set();
 let fotoEntregaLocal=null;
 let fotoEntregaRetiradaPendiente=null;
 let fotosEntregasEliminadasPendientes=[];
@@ -1724,6 +1726,60 @@ async function guardarAltaNuevaConCloudinary(data,fechaIngreso,comisionVenta,{fe
   }
   return {ok:true,data:dataConImagenes};
 }
+function obtenerFotosVehiculoParaCleanup(auto){
+  const autoId=auto?.id||null;
+  if(!auto||!Object.prototype.hasOwnProperty.call(auto,'imagenes'))return {tipo:'historico',autoId,publicIdsValidos:[],metadataInvalida:[]};
+  const imagenes=auto.imagenes;
+  const publicIdsValidos=[];
+  const metadataInvalida=[];
+  if(!Array.isArray(imagenes))return {tipo:'invalido',autoId,publicIdsValidos,metadataInvalida:[{error:'imagenes_not_array'}]};
+  if(imagenes.length<1)metadataInvalida.push({error:'imagenes_empty'});
+  if(imagenes.length>10)metadataInvalida.push({error:'imagenes_limit_exceeded'});
+  imagenes.forEach((imagen,indice)=>{
+    if(!imagen||typeof imagen!=='object'||Array.isArray(imagen)){metadataInvalida.push({indice,error:'invalid_image_metadata'});return;}
+    if(!esPublicIdCloudinaryValido(imagen.publicId)){metadataInvalida.push({indice,error:'invalid_public_id'});return;}
+    if(!publicIdsValidos.includes(imagen.publicId))publicIdsValidos.push(imagen.publicId);
+  });
+  return {tipo:metadataInvalida.length?'invalido':'administrado',autoId,publicIdsValidos,metadataInvalida};
+}
+function guardarPendienteImagenesVehiculoEliminado(autoId,publicIds,metadataInvalida,error='cloudinary_cleanup_failed'){
+  const ids=Array.from(publicIds||[]).filter(esPublicIdCloudinaryValido);
+  const metadata=Array.from(metadataInvalida||[]).map(item=>({...(Number.isInteger(item?.indice)?{indice:item.indice}:{}),error:codigoDiagnosticoFotos({code:item?.error},'invalid_image_metadata')}));
+  imagenesVehiculosEliminadosPendientes=imagenesVehiculosEliminadosPendientes.filter(item=>item.autoId!==autoId);
+  if(ids.length||metadata.length)imagenesVehiculosEliminadosPendientes.push({autoId,publicIds:[...new Set(ids)],metadataInvalida:metadata,error});
+}
+function limpiarPendienteImagenesVehiculoEliminado(autoId){
+  imagenesVehiculosEliminadosPendientes=imagenesVehiculosEliminadosPendientes.filter(item=>item.autoId!==autoId);
+}
+async function limpiarFotosVehiculoEliminadoCloudinary(publicIds,{fetchImpl=fetch,limpiarImpl=limpiarImagenesRetiradasCloudinary}={}){
+  const ids=[...new Set(Array.from(publicIds||[]))];
+  if(ids.length<1||ids.length>10||!ids.every(esPublicIdCloudinaryValido))return {ok:false,pending:ids.filter(esPublicIdCloudinaryValido),error:'invalid_vehicle_cleanup_request',enviados:[]};
+  return limpiarImpl(ids,[],{fetchImpl});
+}
+async function eliminarAutoTransaccional(id,{guardarImpl=guardar,limpiarImpl=limpiarFotosVehiculoEliminadoCloudinary,fetchImpl=fetch}={}){
+  if(autosEliminandose.has(id))return {ok:false,error:'vehicle_deletion_in_progress'};
+  const original=autos.find(auto=>auto.id===id);
+  if(!original)return {ok:false,error:'vehicle_not_found'};
+  autosEliminandose.add(id);
+  const clasificacion=obtenerFotosVehiculoParaCleanup(original);
+  const autosAnteriores=autos;
+  try{
+    autos=autos.filter(auto=>auto.id!==id);
+    let guardado=false;
+    try{guardado=await guardarImpl();}catch{}
+    if(!guardado){autos=autosAnteriores;return {ok:false,error:'vehicle_deletion_save_failed'};}
+    if(clasificacion.tipo==='historico')return {ok:true,tipo:'historico',limpieza:null};
+    const ids=clasificacion.publicIdsValidos;
+    let limpieza;
+    try{limpieza=ids.length>=1&&ids.length<=10?await limpiarImpl(ids,{fetchImpl}):{ok:false,pending:[...ids],error:'invalid_vehicle_cleanup_request',enviados:[]};}
+    catch(error){limpieza={ok:false,pending:[...ids],error:codigoDiagnosticoFotos(error,'cloudinary_cleanup_failed'),enviados:[]};}
+    const pendientes=limpieza?.ok?[]:Array.from(limpieza?.pending||ids).filter(publicId=>ids.includes(publicId));
+    const completa=!!limpieza?.ok&&clasificacion.metadataInvalida.length===0;
+    if(completa)limpiarPendienteImagenesVehiculoEliminado(id);
+    else guardarPendienteImagenesVehiculoEliminado(id,pendientes,clasificacion.metadataInvalida,limpieza?.error||(clasificacion.metadataInvalida.length?'invalid_vehicle_image_metadata':'cloudinary_cleanup_failed'));
+    return {ok:true,tipo:clasificacion.tipo,limpieza:{...limpieza,ok:completa,pending:pendientes,metadataInvalida:clasificacion.metadataInvalida},publicIds:ids};
+  }finally{autosEliminandose.delete(id);}
+}
 function mensajeFalloAlta(resultado){
   if(resultado.rollback&&!resultado.rollback.ok){
     const pendientes=resultado.rollback.pending||[];
@@ -1816,7 +1872,25 @@ async function guardarAuto(){
   setGuardandoAuto(false);cerrar('ov-form');render();showToast('✓ Vehículo agregado');
 }
 
-async function eliminarAuto(id){if(!requireSuperAdmin())return;if(!confirm('¿Eliminar?'))return;const autosAnteriores=autos;autos=autos.filter(a=>a.id!==id);if(!await guardar()){autos=autosAnteriores;return;}render();showToast('Eliminado');}
+async function eliminarAuto(id){
+  if(!requireSuperAdmin()||autosEliminandose.has(id))return;
+  if(!confirm('¿Eliminar?'))return;
+  const resultado=await eliminarAutoTransaccional(id);
+  if(!resultado.ok){
+    if(resultado.error==='vehicle_deletion_save_failed')alert('No se pudo eliminar el vehículo. El registro y sus fotos permanecen sin cambios.');
+    return;
+  }
+  render();
+  if(resultado.limpieza&&!resultado.limpieza.ok){
+    const pendientes=resultado.limpieza.pending||[];
+    const metadataInvalida=resultado.limpieza.metadataInvalida||[];
+    const mensaje=metadataInvalida.length
+      ?`El vehículo fue eliminado correctamente, pero la limpieza de sus fotos no pudo completarse totalmente.${pendientes.length?`\nFotos pendientes:\n${pendientes.join('\n')}`:''}`
+      :`El vehículo fue eliminado correctamente, pero quedaron fotos pendientes de limpieza.${pendientes.length?`\n${pendientes.join('\n')}`:''}`;
+    alert(mensaje);showToast('⚠ Vehículo eliminado con limpieza pendiente');return;
+  }
+  showToast('✓ Vehículo eliminado');
+}
 
 function verFicha(id,desdeDeepLink=false){
   const a=autos.find(x=>x.id===id);if(!a)return;
