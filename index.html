@@ -552,7 +552,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-import { getFirestore, addDoc, collection, deleteDoc, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+import { getFirestore, addDoc, collection, deleteDoc, doc, getDoc, getDocs, increment, setDoc, updateDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 
 const app = initializeApp({
@@ -566,6 +566,9 @@ const app = initializeApp({
 const db = getFirestore(app);
 const auth = getAuth(app);
 const DOC = doc(db,"catalogo","datos");
+const CLEANUPS_PENDIENTES = collection(db,"cloudinaryCleanupPendientes");
+const TIPOS_CLEANUP_PENDIENTE = new Set(['vehiculo_edicion_cleanup','vehiculo_upload_rollback','vendido_sustitucion_cleanup','vendido_upload_rollback','vendido_eliminacion_cleanup','vehiculo_eliminacion_cleanup']);
+const ESTADOS_CLEANUP_PENDIENTE = new Set(['pendiente','requiere_revision']);
 
 const WHATSAPP_NUMERO = "595986147136";
 const CLOUDINARY_SIGN_URL = "http://127.0.0.1:8787/cloudinary/sign-upload";
@@ -1575,6 +1578,72 @@ function obtenerImagenesNuevasEdicion(edicion=imagenesEdicion){
 function codigoDiagnosticoFotos(error,fallback='photo_preparation_failed'){
   const codigo=typeof error?.code==='string'&&error.code?error.code:typeof error?.message==='string'&&error.message?error.message:fallback;
   return /^[A-Za-z0-9_./:-]{1,120}$/.test(codigo)?codigo:fallback;
+}
+function validarCleanupPendiente({tipo,referenciaId,publicId,ultimoError,estado='pendiente',intentos=0}={}){
+  if(!TIPOS_CLEANUP_PENDIENTE.has(tipo))throw new Error('invalid_cleanup_type');
+  if(typeof referenciaId!=='string'||!/^[A-Za-z0-9_.:-]{1,160}$/.test(referenciaId))throw new Error('invalid_cleanup_reference');
+  if(!esPublicIdCloudinaryValido(publicId))throw new Error('invalid_cleanup_public_id');
+  if(!ESTADOS_CLEANUP_PENDIENTE.has(estado))throw new Error('invalid_cleanup_status');
+  if(!Number.isInteger(intentos)||intentos<0)throw new Error('invalid_cleanup_attempts');
+  if(typeof ultimoError!=='string'||!ultimoError)throw new Error('invalid_cleanup_error');
+  const errorSeguro=codigoDiagnosticoFotos({code:ultimoError},'cloudinary_cleanup_failed');
+  if(errorSeguro!==ultimoError)throw new Error('invalid_cleanup_error');
+  return {tipo,referenciaId,publicIds:[publicId],ultimoError:errorSeguro,intentos,estado};
+}
+async function crearIdCleanupPendiente(publicId,{cryptoImpl=globalThis.crypto}={}){
+  if(!esPublicIdCloudinaryValido(publicId))throw new Error('invalid_cleanup_public_id');
+  if(!cryptoImpl?.subtle?.digest)throw new Error('secure_cleanup_hash_unavailable');
+  const digest=await cryptoImpl.subtle.digest('SHA-256',new TextEncoder().encode(publicId));
+  return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+}
+async function persistirCleanupPendiente(datos,{getDocImpl=getDoc,setDocImpl=setDoc,docImpl=doc,serverTimestampImpl=serverTimestamp,collectionRef=CLEANUPS_PENDIENTES,cryptoImpl=globalThis.crypto}={}){
+  const normalizado=validarCleanupPendiente({...datos,intentos:0});
+  const publicId=normalizado.publicIds[0];
+  const id=await crearIdCleanupPendiente(publicId,{cryptoImpl});
+  const referencia=docImpl(collectionRef,id);
+  const existente=await getDocImpl(referencia);
+  const ahora=serverTimestampImpl();
+  const nuevo=!existente?.exists?.();
+  await setDocImpl(referencia,{tipo:normalizado.tipo,referenciaId:normalizado.referenciaId,publicIds:[publicId],ultimoError:normalizado.ultimoError,estado:normalizado.estado,actualizadoEn:ahora,...(nuevo?{creadoEn:ahora,intentos:0}:{})},{merge:true});
+  return {ok:true,id,nuevo,documento:{...normalizado,id}};
+}
+function esTimestampCleanupValido(valor){return !!valor&&(typeof valor.toDate==='function'||Number.isInteger(valor.seconds)&&Number.isInteger(valor.nanoseconds));}
+async function normalizarDocumentoCleanupPendiente(snapshot,{cryptoImpl=globalThis.crypto}={}){
+  const datos=snapshot?.data?.()||{};
+  const errores=[];
+  const publicIds=Array.isArray(datos.publicIds)&&datos.publicIds.length===1?datos.publicIds:[];
+  if(publicIds.length!==1)errores.push('invalid_cleanup_public_ids');
+  let normalizado=null;
+  try{normalizado=validarCleanupPendiente({tipo:datos.tipo,referenciaId:datos.referenciaId,publicId:publicIds[0],ultimoError:datos.ultimoError,estado:datos.estado,intentos:datos.intentos});}
+  catch(error){errores.push(codigoDiagnosticoFotos(error,'invalid_cleanup_document'));}
+  if(!esTimestampCleanupValido(datos.creadoEn))errores.push('invalid_cleanup_created_at');
+  if(!esTimestampCleanupValido(datos.actualizadoEn))errores.push('invalid_cleanup_updated_at');
+  if(normalizado){
+    try{if(await crearIdCleanupPendiente(normalizado.publicIds[0],{cryptoImpl})!==snapshot.id)errores.push('invalid_cleanup_document_id');}
+    catch(error){errores.push(codigoDiagnosticoFotos(error,'invalid_cleanup_document_id'));}
+  }
+  if(errores.length)return {id:snapshot?.id||'',valido:false,estado:'requiere_revision',errores:[...new Set(errores)],publicIds:publicIds.filter(id=>typeof id==='string'),tipo:TIPOS_CLEANUP_PENDIENTE.has(datos.tipo)?datos.tipo:null,referenciaId:typeof datos.referenciaId==='string'?datos.referenciaId:null};
+  return {id:snapshot.id,valido:true,...normalizado,creadoEn:datos.creadoEn,actualizadoEn:datos.actualizadoEn};
+}
+async function obtenerCleanupsPendientes({getDocsImpl=getDocs,collectionRef=CLEANUPS_PENDIENTES,cryptoImpl=globalThis.crypto}={}){
+  const resultado=await getDocsImpl(collectionRef);
+  const documentos=[];
+  for(const snapshot of resultado.docs||[])documentos.push(await normalizarDocumentoCleanupPendiente(snapshot,{cryptoImpl}));
+  return {validos:documentos.filter(item=>item.valido),invalidos:documentos.filter(item=>!item.valido),todos:documentos};
+}
+async function registrarFalloReintentoCleanup(publicId,ultimoError,estado='pendiente',{updateDocImpl=updateDoc,incrementImpl=increment,docImpl=doc,serverTimestampImpl=serverTimestamp,collectionRef=CLEANUPS_PENDIENTES,cryptoImpl=globalThis.crypto}={}){
+  if(!esPublicIdCloudinaryValido(publicId))throw new Error('invalid_cleanup_public_id');
+  if(!ESTADOS_CLEANUP_PENDIENTE.has(estado))throw new Error('invalid_cleanup_status');
+  const errorSeguro=codigoDiagnosticoFotos({code:ultimoError},'cloudinary_cleanup_failed');
+  const id=await crearIdCleanupPendiente(publicId,{cryptoImpl});
+  await updateDocImpl(docImpl(collectionRef,id),{intentos:incrementImpl(1),ultimoError:errorSeguro,estado,actualizadoEn:serverTimestampImpl()});
+  return {ok:true,id};
+}
+async function resolverCleanupPendiente(publicId,{deleteDocImpl=deleteDoc,docImpl=doc,collectionRef=CLEANUPS_PENDIENTES,cryptoImpl=globalThis.crypto}={}){
+  if(!esPublicIdCloudinaryValido(publicId))throw new Error('invalid_cleanup_public_id');
+  const id=await crearIdCleanupPendiente(publicId,{cryptoImpl});
+  await deleteDocImpl(docImpl(collectionRef,id));
+  return {ok:true,id};
 }
 function validarEstadoImagenesEdicion(edicion=imagenesEdicion){
   const entradas=Array.from(edicion||[]);
