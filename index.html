@@ -589,7 +589,14 @@ const TIPOS_CLEANUP_PENDIENTE = new Set(['vehiculo_edicion_cleanup','vehiculo_up
 const ESTADOS_CLEANUP_PENDIENTE = new Set(['pendiente','requiere_revision']);
 
 const WHATSAPP_NUMERO = "595986147136";
-const CLOUDINARY_SIGN_URL = "http://127.0.0.1:8787/cloudinary/sign-upload";
+function obtenerWorkerCloudinaryBaseUrl(hostname=location.hostname){
+  if(hostname==='127.0.0.1'||hostname==='localhost')return 'http://127.0.0.1:8787';
+  if(hostname==='dsantanderpy.github.io')return 'https://carhome-image-worker.cuentaastra2015.workers.dev';
+  return null;
+}
+const WORKER_CLOUDINARY_BASE_URL = obtenerWorkerCloudinaryBaseUrl();
+const CLOUDINARY_SIGN_URL = WORKER_CLOUDINARY_BASE_URL?`${WORKER_CLOUDINARY_BASE_URL}/cloudinary/sign-upload`:null;
+const CLOUDINARY_ROLLBACK_URL = WORKER_CLOUDINARY_BASE_URL?`${WORKER_CLOUDINARY_BASE_URL}/cloudinary/rollback`:null;
 let autos=[],entregas=[],finanzas=[],isAdmin=false,currentUser=null,currentRole=null,isSuperAdmin=false,isOwner=false,editId=null,editEntregaId=null,galeriaFotos=[],fotoActiva=0,cargaOk=false,fichaDesdeDeepLink=false;
 let fotosLocales=[],fotoLocalArrastrada=null;
 let imagenesEdicion=[],imagenesOriginales=[],modoFotosEdicion=null,imagenEdicionArrastrada=null;
@@ -1474,6 +1481,7 @@ function validarCantidadFotosCloudinary(count){
   if(!Number.isInteger(count)||count<1||count>10)throw new Error('invalid_photo_count');
 }
 async function solicitarFirmaCloudinary(count,batchId=crearBatchIdCloudinary(),fetchImpl=fetch){
+  if(!CLOUDINARY_SIGN_URL)throw new Error('unsupported_worker_origin');
   validarCantidadFotosCloudinary(count);
   if(!currentUser)throw new Error('authentication_required');
   if(typeof batchId!=='string'||!/^[A-Za-z0-9_-]{8,80}$/.test(batchId))throw new Error('invalid_batch_id');
@@ -1570,12 +1578,13 @@ function setGuardandoAuto(activo){
 function esPublicIdCloudinaryValido(publicId){return typeof publicId==='string'&&/^catalogo-vehiculos\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(publicId);}
 async function rollbackCloudinary(batchId,publicIds,fetchImpl=fetch){
   const ids=Array.from(publicIds||[]);
+  if(!CLOUDINARY_ROLLBACK_URL)return {ok:false,pending:ids,error:'unsupported_worker_origin'};
   if(!currentUser||typeof batchId!=='string'||!/^[A-Za-z0-9_-]{8,80}$/.test(batchId)||ids.length<1||ids.length>10||!ids.every(esPublicIdCloudinaryValido)){
     return {ok:false,pending:ids,error:'invalid_rollback_request'};
   }
   try{
     const idToken=await currentUser.getIdToken();
-    const response=await fetchImpl('http://127.0.0.1:8787/cloudinary/rollback',{
+    const response=await fetchImpl(CLOUDINARY_ROLLBACK_URL,{
       method:'POST',
       headers:{'Authorization':`Bearer ${idToken}`,'Content-Type':'application/json'},
       body:JSON.stringify({batchId,publicIds:ids}),
