@@ -1927,6 +1927,7 @@ function obtenerFotosVehiculoParaCleanup(auto){
   const imagenes=auto.imagenes;
   const publicIdsValidos=[];
   const metadataInvalida=[];
+  if(auto.imagenesRetiradas===true&&auto.foto===''&&auto.fotos===''&&Array.isArray(imagenes)&&imagenes.length===0)return {tipo:'limpiado',autoId,publicIdsValidos,metadataInvalida};
   if(!Array.isArray(imagenes))return {tipo:'invalido',autoId,publicIdsValidos,metadataInvalida:[{error:'imagenes_not_array'}]};
   if(imagenes.length<1)metadataInvalida.push({error:'imagenes_empty'});
   if(imagenes.length>10)metadataInvalida.push({error:'imagenes_limit_exceeded'});
@@ -2053,7 +2054,7 @@ async function eliminarAutoTransaccional(id,{guardarImpl=guardar,limpiarImpl=lim
     let guardado=false;
     try{guardado=await guardarImpl();}catch{}
     if(!guardado){autos=autosAnteriores;return {ok:false,error:'vehicle_deletion_save_failed'};}
-    if(clasificacion.tipo==='historico')return {ok:true,tipo:'historico',limpieza:null};
+    if(clasificacion.tipo==='historico'||clasificacion.tipo==='limpiado')return {ok:true,tipo:clasificacion.tipo,limpieza:null};
     const ids=clasificacion.publicIdsValidos;
     let limpieza;
     try{limpieza=ids.length>=1&&ids.length<=10?await limpiarImpl(ids,{fetchImpl}):{ok:false,pending:[...ids],error:'invalid_vehicle_cleanup_request',enviados:[]};}
