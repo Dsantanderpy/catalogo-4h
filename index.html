@@ -603,6 +603,7 @@ let imagenesEdicion=[],imagenesOriginales=[],modoFotosEdicion=null,imagenEdicion
 let imagenesEliminadasPendientes=[];
 let imagenesVehiculosEliminadosPendientes=[];
 const autosEliminandose=new Set();
+const fotosVehiculosVendidosLimpiandose=new Set();
 let fotoEntregaLocal=null;
 let fotoEntregaRetiradaPendiente=null;
 let fotosEntregasEliminadasPendientes=[];
@@ -856,13 +857,21 @@ function renderVentas(){
     </div>`;
   if(!vendidos.length){g.innerHTML='';e.style.display='block';return;}
   e.style.display='none';
-  g.innerHTML=vendidos.map(a=>`
+  g.innerHTML=vendidos.map(a=>{
+    const fotos=clasificarFotosVehiculoVendido(a);
+    const limpiando=fotosVehiculosVendidosLimpiandose.has(a.id);
+    const accionFotos=!isSuperAdmin?'' : fotos.tipo==='administrado'
+      ?`<button class="bdel" ${limpiando?'disabled':''} onclick="limpiarFotosVehiculoVendido('${a.id}')">${limpiando?'Limpiando...':'Limpiar fotos'}</button>`
+      :`<div class="cleanup-meta">${fotos.tipo==='limpiado'?'Fotos ya retiradas':fotos.tipo==='historico'?'Fotos históricas no administradas':'Fotos requieren revisión'}</div>`;
+    return `
     <div class="venta-card">
       <div><div class="venta-label">Vehículo</div><div class="venta-val">${a.marca} ${a.modelo} ${a.anio||''}</div></div>
       <div><div class="venta-label">Vendedor</div><div class="venta-val">${a.venta?.vendedor||'—'}</div></div>
       <div><div class="venta-label">Fecha</div><div class="venta-val fecha">${a.venta?.fecha||'—'}</div></div>
       <div><div class="venta-label">Condición</div><div class="venta-val">${a.condicion||'—'}</div></div>
-    </div>`).join('');
+      <div>${accionFotos}</div>
+    </div>`;
+  }).join('');
 }
 
 function limpiarVF(){
@@ -1928,6 +1937,96 @@ function obtenerFotosVehiculoParaCleanup(auto){
   });
   return {tipo:metadataInvalida.length?'invalido':'administrado',autoId,publicIdsValidos,metadataInvalida};
 }
+function clasificarFotosVehiculoVendido(auto){
+  const autoId=typeof auto?.id==='string'&&auto.id?auto.id:null;
+  if(!auto||!Object.prototype.hasOwnProperty.call(auto,'imagenes'))return {tipo:'historico',autoId,publicIds:[],error:'historical_vehicle_images_not_managed'};
+  const imagenes=auto.imagenes;
+  if(auto.imagenesRetiradas===true&&Array.isArray(imagenes)&&imagenes.length===0&&auto.foto===''&&auto.fotos==='')return {tipo:'limpiado',autoId,publicIds:[]};
+  if(!Array.isArray(imagenes))return {tipo:'invalido',autoId,publicIds:[],error:'imagenes_not_array'};
+  if(imagenes.length<1)return {tipo:'invalido',autoId,publicIds:[],error:'imagenes_empty'};
+  if(imagenes.length>10)return {tipo:'invalido',autoId,publicIds:[],error:'imagenes_limit_exceeded'};
+  const publicIds=[];
+  for(const imagen of imagenes){
+    if(!imagen||typeof imagen!=='object'||Array.isArray(imagen))return {tipo:'invalido',autoId,publicIds:[],error:'invalid_image_metadata'};
+    if(!esPublicIdCloudinaryValido(imagen.publicId))return {tipo:'invalido',autoId,publicIds:[],error:'invalid_public_id'};
+    if(typeof imagen.secureUrl!=='string'||!/^https:\/\/[^\s]{1,2040}$/.test(imagen.secureUrl))return {tipo:'invalido',autoId,publicIds:[],error:'invalid_secure_url'};
+    if(publicIds.includes(imagen.publicId))return {tipo:'invalido',autoId,publicIds:[],error:'duplicate_public_id'};
+    publicIds.push(imagen.publicId);
+  }
+  return {tipo:'administrado',autoId,publicIds,huella:JSON.stringify(imagenes)};
+}
+function buscarReferenciasExternasFotosVehiculo(autoId,publicIds,{autosActuales=autos,entregasActuales=entregas}={}){
+  const autosSinObjetivo=Array.from(autosActuales||[]).filter(auto=>auto?.id!==autoId);
+  return Array.from(publicIds||[]).filter(publicId=>publicIdEstaActivo(publicId,{autosActuales:autosSinObjetivo,entregasActuales}));
+}
+async function resolverPendientesCleanupConfirmados(publicIds,{resolverImpl=resolverCleanupPendiente}={}){
+  const resueltos=[],fallidos=[];
+  for(const publicId of Array.from(publicIds||[])){
+    try{await resolverImpl(publicId);resueltos.push(publicId);}
+    catch(error){fallidos.push({publicId,error:codigoDiagnosticoFotos(error,'cleanup_queue_resolution_failed')});}
+  }
+  return {ok:fallidos.length===0,resueltos,fallidos};
+}
+async function limpiarFotosVehiculoVendidoTransaccional(id,{autorizarImpl=requireSuperAdmin,confirmarImpl=confirm,guardarImpl=guardar,limpiarImpl=limpiarImagenesRetiradasCloudinary,persistirPendientesImpl=persistirPendientesCleanupPostFirestore,resolverPendientesImpl=resolverPendientesCleanupConfirmados,fetchImpl=fetch,onEstado=()=>{}}={}){
+  if(!autorizarImpl()||!currentUser||!cargaOk)return {ok:false,error:'vehicle_photo_cleanup_unauthorized'};
+  if(typeof id!=='string'||!id||autos.filter(auto=>auto?.id===id).length!==1)return {ok:false,error:'vehicle_not_found_or_ambiguous'};
+  if(fotosVehiculosVendidosLimpiandose.has(id)||autosEliminandose.has(id))return {ok:false,error:'vehicle_photo_cleanup_in_progress'};
+  const inicial=autos.find(auto=>auto.id===id);
+  if(inicial.estado!=='vendido')return {ok:false,error:'vehicle_not_sold'};
+  const clasificacionInicial=clasificarFotosVehiculoVendido(inicial);
+  if(clasificacionInicial.tipo!=='administrado')return {ok:false,tipo:clasificacionInicial.tipo,error:clasificacionInicial.error||`vehicle_images_${clasificacionInicial.tipo}`};
+  if(!WORKER_CLOUDINARY_BASE_URL)return {ok:false,error:'unsupported_worker_origin'};
+  if(clasificacionInicial.publicIds.some(publicId=>cleanupsReintentando.has(publicId)))return {ok:false,error:'cleanup_retry_in_progress'};
+  if(buscarReferenciasExternasFotosVehiculo(id,clasificacionInicial.publicIds).length)return {ok:false,error:'active_catalog_reference'};
+  fotosVehiculosVendidosLimpiandose.add(id);onEstado();
+  try{
+    const confirmado=confirmarImpl(`Se retirarán permanentemente ${clasificacionInicial.publicIds.length} foto${clasificacionInicial.publicIds.length===1?'':'s'} administrada${clasificacionInicial.publicIds.length===1?'':'s'} de ${inicial.marca||''} ${inicial.modelo||''}. El vehículo continuará marcado como vendido. ¿Continuar?`);
+    if(!confirmado)return {ok:false,error:'vehicle_photo_cleanup_cancelled'};
+    const coincidencias=autos.filter(auto=>auto?.id===id);
+    if(coincidencias.length!==1||coincidencias[0].estado!=='vendido'||autosEliminandose.has(id))return {ok:false,error:'vehicle_photo_cleanup_revalidation_failed'};
+    const actual=coincidencias[0],clasificacion=clasificarFotosVehiculoVendido(actual);
+    if(clasificacion.tipo!=='administrado'||clasificacion.huella!==clasificacionInicial.huella)return {ok:false,error:'vehicle_photo_cleanup_revalidation_failed'};
+    if(clasificacion.publicIds.some(publicId=>cleanupsReintentando.has(publicId)))return {ok:false,error:'cleanup_retry_in_progress'};
+    if(buscarReferenciasExternasFotosVehiculo(id,clasificacion.publicIds).length)return {ok:false,error:'active_catalog_reference'};
+    const autosAnteriores=autos;
+    const actualizado={...actual,foto:'',fotos:'',imagenes:[],imagenesRetiradas:true};
+    autos=autos.map(auto=>auto.id===id?actualizado:auto);
+    let guardado=false;
+    try{guardado=await guardarImpl();}catch{}
+    if(!guardado){autos=autosAnteriores;return {ok:false,error:'vehicle_photo_cleanup_save_failed'};}
+    let limpieza;
+    try{limpieza=await limpiarImpl(clasificacion.publicIds,[],{fetchImpl});}
+    catch(error){limpieza={ok:false,pending:[...clasificacion.publicIds],error:codigoDiagnosticoFotos(error,'cloudinary_cleanup_failed'),enviados:[]};}
+    const pendientesInformados=Array.isArray(limpieza?.pending)?limpieza.pending.filter(publicId=>clasificacion.publicIds.includes(publicId)):[];
+    const respuestaTotal=limpieza?.ok===true&&Array.isArray(limpieza.pending)&&limpieza.pending.length===0;
+    const pendientes=respuestaTotal?[]:pendientesInformados.length?[...new Set(pendientesInformados)]:[...clasificacion.publicIds];
+    const confirmados=clasificacion.publicIds.filter(publicId=>!pendientes.includes(publicId));
+    const limpiezaFinal={...limpieza,ok:respuestaTotal,pending:pendientes};
+    let persistenciaPendientes={ok:true,persistidos:[],fallidos:[]};
+    try{persistenciaPendientes=await persistirPendientesImpl({tipo:'vehiculo_edicion_cleanup',referenciaId:id,limpieza:limpiezaFinal});}
+    catch(error){persistenciaPendientes={ok:false,persistidos:[],fallidos:pendientes.map(publicId=>({publicId,error:codigoDiagnosticoFotos(error,'cleanup_queue_persistence_failed')}))};}
+    const resolucionPendientes=await resolverPendientesImpl(confirmados);
+    return {ok:true,tipo:limpiezaFinal.ok?'completo':confirmados.length?'parcial':'pendiente',data:actualizado,limpieza:limpiezaFinal,persistenciaPendientes,resolucionPendientes};
+  }finally{
+    fotosVehiculosVendidosLimpiandose.delete(id);onEstado();
+  }
+}
+async function limpiarFotosVehiculoVendido(id){
+  const resultado=await limpiarFotosVehiculoVendidoTransaccional(id,{onEstado:renderVentas});
+  render();
+  if(resultado.ok&&resultado.tipo==='completo'){showToast('✓ Fotos retiradas correctamente');return resultado;}
+  if(resultado.ok){
+    const pendientes=resultado.limpieza?.pending||[];
+    const sinPersistir=Array.from(resultado.persistenciaPendientes?.fallidos||[]).map(item=>item.publicId).filter(esPublicIdCloudinaryValido);
+    alert(`Las referencias fueron retiradas, pero quedaron ${pendientes.length} fotos físicas pendientes de limpieza.${sinPersistir.length?`\nNo se pudieron registrar persistentemente:\n${sinPersistir.join('\n')}`:''}`);
+    showToast('⚠ Fotos con limpieza pendiente');return resultado;
+  }
+  const mensajes={historico:'Este vehículo usa fotos históricas sin metadata administrada. No es posible limpiarlas automáticamente de forma segura.',invalido:'Las fotos requieren revisión porque su metadata administrada es inválida.',limpiado:'Las fotos de este vehículo ya fueron retiradas.'};
+  if(resultado.tipo&&mensajes[resultado.tipo])alert(mensajes[resultado.tipo]);
+  else if(resultado.error==='vehicle_photo_cleanup_save_failed')alert('No se pudieron retirar las referencias. El vehículo y sus fotos permanecen sin cambios.');
+  else if(resultado.error==='active_catalog_reference')alert('Una foto continúa referenciada por otro auto o entrega y no puede eliminarse de forma segura.');
+  return resultado;
+}
 function guardarPendienteImagenesVehiculoEliminado(autoId,publicIds,metadataInvalida,error='cloudinary_cleanup_failed'){
   const ids=Array.from(publicIds||[]).filter(esPublicIdCloudinaryValido);
   const metadata=Array.from(metadataInvalida||[]).map(item=>({...(Number.isInteger(item?.indice)?{indice:item.indice}:{}),error:codigoDiagnosticoFotos({code:item?.error},'invalid_image_metadata')}));
@@ -2515,6 +2614,7 @@ document.getElementById('foto-entrega-input').addEventListener('change',seleccio
 window.goSec=goSec;window.abrirLogin=abrirLogin;window.doLogin=doLogin;window.salirAdmin=salirAdmin;
 window.abrirForm=abrirForm;window.guardarAuto=guardarAuto;window.eliminarAuto=eliminarAuto;
 window.verFicha=verFicha;window.toggleVendido=toggleVendido;window.guardarDatosVenta=guardarDatosVenta;
+window.limpiarFotosVehiculoVendido=limpiarFotosVehiculoVendido;
 window.abrirFormEntrega=abrirFormEntrega;window.guardarEntrega=guardarEntrega;window.eliminarEntrega=eliminarEntrega;window.verEntrega=verEntrega;
 window.abrirCleanupsPendientes=abrirCleanupsPendientes;window.reintentarCleanupPendiente=reintentarCleanupPendiente;
 window.cerrar=cerrar;window.cambiarFoto=cambiarFoto;window.verFotoFull=verFotoFull;window.navegarFoto=navegarFoto;
