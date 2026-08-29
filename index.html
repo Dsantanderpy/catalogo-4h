@@ -1509,7 +1509,7 @@ async function abrirForm(id){
   let fechaIngreso=a?.fechaIngreso||'';
   let comisionVenta=0;
   let combustible=a?.combustible||'';
-  if(a)try{const finanzas=await getDoc(doc(db,'finanzasVehiculos',a.id));if(finanzas.exists()){const datos=finanzas.data();fechaIngreso=datos.fechaIngreso||fechaIngreso;comisionVenta=Number(datos.comisiones?.comisionVenta)||0;if(!combustible)combustible=datos.vehiculo?.combustible||'';}}catch(e){console.error(e);}
+  if(a)try{const finanzas=await getDoc(doc(db,'finanzasVehiculos',a.id));if(finanzas.exists()){const datos=finanzas.data();fechaIngreso=datos.fechaIngreso||fechaIngreso;comisionVenta=Number(datos.comisiones?.comisionVenta)||0;if(!combustible)combustible=datos.vehiculo?.combustible||'';}}catch(e){console.error(e);alert('No fue posible cargar todos los datos financieros del vehículo. La edición no se abrió para evitar guardar información incompleta. Revisá tu conexión e intentá nuevamente.');return;}
   editId=a?a.id:null;
   document.getElementById('fm-title').textContent=a?'EDITAR VEHÍCULO':'AGREGAR VEHÍCULO';
   document.getElementById('fm-marca').value=a?.marca||'';
