@@ -224,7 +224,7 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .foto-local-item{display:grid;grid-template-columns:86px minmax(0,1fr) auto;gap:10px;align-items:center;background:var(--gris2);border:1px solid var(--borde);border-radius:8px;padding:8px;}
 .foto-local-item.dragging{opacity:0.45;}
 .foto-local-item.drag-over{border-color:var(--rojo);}
-.foto-local-preview{width:86px;height:64px;display:block;object-fit:cover;border-radius:5px;background:var(--negro);}
+.foto-local-preview{width:86px;height:64px;display:block;object-fit:cover;border-radius:5px;background:var(--negro);cursor:pointer;}
 .foto-local-info{min-width:0;}
 .foto-local-order{font-size:12px;font-weight:700;color:var(--blanco);}
 .foto-local-cover{display:inline-block;margin-left:6px;color:var(--dorado);font-size:9px;letter-spacing:1px;}
@@ -587,6 +587,11 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
   <img class="foto-full-img" id="foto-full-img" src="" alt="" onclick="event.stopPropagation()">
   <button onclick="event.stopPropagation();navegarFoto(1)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.15);border:none;color:#fff;font-size:2rem;padding:10px 18px;border-radius:6px;cursor:pointer;z-index:2">&#8250;</button>
   <div id="foto-counter" style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.7);font-size:13px;background:rgba(0,0,0,0.5);padding:4px 14px;border-radius:20px"></div>
+</div>
+
+<div class="foto-full-ov" id="ov-foto-edicion">
+  <button class="foto-full-close" id="foto-edicion-full-close" type="button">✕</button>
+  <img class="foto-full-img" id="foto-edicion-full-img" src="" alt="Vista ampliada de la foto">
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1534,6 +1539,12 @@ async function abrirForm(id){
 }
 
 function clonarImagenEdicion(imagen){return imagen&&typeof imagen==='object'?{...imagen}:imagen;}
+function abrirVisorFotoEdicion(url){
+  if(!url)return;document.getElementById('foto-edicion-full-img').src=url;document.getElementById('ov-foto-edicion').classList.add('on');
+}
+function cerrarVisorFotoEdicion(){
+  document.getElementById('ov-foto-edicion').classList.remove('on');document.getElementById('foto-edicion-full-img').removeAttribute('src');
+}
 function prepararImagenesEdicion(auto){
   limpiarImagenesEdicion();
   modoFotosEdicion=!auto?'alta':(Array.isArray(auto.imagenes)&&auto.imagenes.length>0?'administrado':'historico');
@@ -1560,7 +1571,7 @@ function renderImagenesEdicion(){
     item.addEventListener('dragover',evento=>{evento.preventDefault();if(imagenEdicionArrastrada!==foto.id)item.classList.add('drag-over');});
     item.addEventListener('dragleave',()=>item.classList.remove('drag-over'));
     item.addEventListener('drop',evento=>{evento.preventDefault();item.classList.remove('drag-over');reordenarImagenEdicion(imagenEdicionArrastrada,foto.id);});
-    const preview=document.createElement('img');preview.className='foto-local-preview';preview.src=foto.url;preview.alt=`Foto ${indice+1}`;
+    const preview=document.createElement('img');preview.className='foto-local-preview';preview.src=foto.url;preview.alt=`Foto ${indice+1}`;preview.addEventListener('click',evento=>{evento.stopPropagation();abrirVisorFotoEdicion(foto.url);});
     const info=document.createElement('div');info.className='foto-local-info';
     const orden=document.createElement('div');orden.className='foto-local-order';orden.textContent=`#${indice+1}`;
     if(indice===0){const portada=document.createElement('span');portada.className='foto-local-cover';portada.textContent='PORTADA';orden.appendChild(portada);}
@@ -2777,8 +2788,11 @@ function cerrar(id){
 }
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2600);}
 
-document.querySelectorAll('.ov,.foto-full-ov').forEach(ov=>ov.addEventListener('click',e=>{if(e.target===ov)cerrar(ov.id);}));
+document.querySelectorAll('.ov,.foto-full-ov:not(#ov-foto-edicion)').forEach(ov=>ov.addEventListener('click',e=>{if(e.target===ov)cerrar(ov.id);}));
 document.getElementById('foto-entrega-input').addEventListener('change',seleccionarFotoEntregaLocal);
+document.getElementById('foto-edicion-full-close').addEventListener('click',cerrarVisorFotoEdicion);
+document.getElementById('ov-foto-edicion').addEventListener('click',evento=>{if(evento.target===evento.currentTarget)cerrarVisorFotoEdicion();});
+document.addEventListener('keydown',evento=>{if(evento.key==='Escape'&&document.getElementById('ov-foto-edicion').classList.contains('on'))cerrarVisorFotoEdicion();});
 document.getElementById('fm-ingreso-asistido-analizar').addEventListener('click',analizarIngresoAsistido);
 document.getElementById('fm-ingreso-asistido-aplicar').addEventListener('click',aplicarDatosIngresoAsistido);
 ['fm-precio','fm-comision-venta'].forEach(id=>document.getElementById(id).addEventListener('input',event=>actualizarFormatoImporte(event.currentTarget)));
