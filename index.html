@@ -173,6 +173,19 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
 .fi:focus{border-color:var(--rojo);}
 .fhint{font-size:10px;color:var(--apagado);margin-top:4px;}
 .fval-bg{background:#0a140a;border-color:#1a2e1a;}
+.ingreso-asistido{background:#111a24;border:1px solid #24384d;border-radius:9px;padding:12px;margin-bottom:12px;}
+.ingreso-asistido-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
+.ingreso-asistido-title{font-size:10px;text-transform:uppercase;letter-spacing:1.6px;color:#7fa7d1;font-weight:700;}
+.ingreso-asistido-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px;}
+.ingreso-propuestas{display:grid;gap:6px;margin-top:10px;}
+.ingreso-propuestas:empty{display:none;margin-top:0;}
+.ingreso-resumen{font-size:12px;color:var(--verde);padding:7px 0 1px;line-height:1.4;}
+.ingreso-propuesta{background:#0d141c;border:1px solid #24313f;border-radius:6px;padding:8px 10px;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:9px;}
+.ingreso-propuesta-info{min-width:0;overflow-wrap:anywhere;}
+.ingreso-propuesta-alerta{color:var(--dorado);margin-right:5px;}
+.ingreso-propuesta-meta{font-size:10px;color:var(--apagado);margin-top:2px;}
+.ingreso-propuesta button{flex-shrink:0;background:transparent;border:1px solid #45617e;color:#9fc1e3;padding:5px 8px;border-radius:5px;cursor:pointer;font-size:10px;}
+.ingreso-no-reconocidos{font-size:11px;color:var(--apagado);border-top:1px solid #24313f;margin-top:8px;padding-top:8px;line-height:1.5;}
 .ff{display:flex;gap:8px;justify-content:flex-end;margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--borde);}
 .brojo{background:var(--rojo);color:#fff;border:none;padding:9px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;transition:background 0.15s;}
 .brojo:hover{background:var(--rojo-o);}
@@ -366,7 +379,6 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
       <div><div class="f-label">Marca</div><input class="fi-f" id="f-marca" placeholder="Ej: Toyota" oninput="filtrar()"></div>
       <div><div class="f-label">Modelo</div><input class="fi-f" id="f-modelo" placeholder="Ej: Hilux" oninput="filtrar()"></div>
       <div><div class="f-label">Condición</div><select class="fi-f" id="f-cond" onchange="filtrar()"><option value="">Todas</option><option>Nuevo</option><option>Seminuevo</option><option>Usado</option><option>Importado</option></select></div>
-      <div><div class="f-label">Tracción</div><select class="fi-f" id="f-trac" onchange="filtrar()"><option value="">Todas</option><option>4x2</option><option>4x4</option></select></div>
       <div><div class="f-label">Transmisión</div><select class="fi-f" id="f-trans" onchange="filtrar()"><option value="">Todas</option><option>Mecánico</option><option>Automático</option></select></div>
       <div><div class="f-label">Precio máx.</div><input class="fi-f" id="f-pmax" placeholder="Ej: 50000000" oninput="filtrar()"></div>
       <div style="display:flex;align-items:flex-end"><button class="btn-clear" onclick="limpiarFil()">Limpiar filtros</button></div>
@@ -411,7 +423,6 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
     <div class="filters">
       <div><div class="f-label">Buscar vehículo</div><input class="fi-f" id="ff-buscar" placeholder="Marca, modelo o ID" oninput="renderFinanzas()"></div>
       <div><div class="f-label">Estado financiero</div><select class="fi-f" id="ff-estado" onchange="renderFinanzas()"><option value="">Todos</option><option value="en_stock">En stock</option><option value="vendido">Vendido</option><option value="archivado">Archivado</option></select></div>
-      <div><div class="f-label">Sucursal</div><select class="fi-f" id="ff-sucursal" onchange="renderFinanzas()"><option value="">Todas</option><option value="central">Central</option><option value="sucursal">Sucursal</option></select></div>
       <div style="display:flex;align-items:flex-end"><button class="btn-clear" onclick="limpiarFiltrosFinanzas()">Limpiar</button></div>
     </div>
     <div id="g-finanzas"></div>
@@ -464,6 +475,15 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
   <div class="modal wide">
     <button class="mc" onclick="cerrar('ov-form')">✕</button>
     <div class="mt" id="fm-title">AGREGAR VEHÍCULO</div>
+    <div class="ingreso-asistido" id="fm-ingreso-asistido">
+      <div class="ingreso-asistido-head"><div class="ingreso-asistido-title">Ingreso inteligente asistido — texto pegado</div></div>
+      <textarea class="fi" id="fm-ingreso-asistido-texto" rows="6" placeholder="Pegá aquí los datos del vehículo..."></textarea>
+      <div class="ingreso-asistido-actions">
+        <button class="bout" type="button" id="fm-ingreso-asistido-analizar">Analizar datos</button>
+        <button class="brojo" type="button" id="fm-ingreso-asistido-aplicar" hidden disabled>Aplicar datos</button>
+      </div>
+      <div class="ingreso-propuestas" id="fm-ingreso-asistido-propuestas" aria-live="polite"></div>
+    </div>
     <div class="fg">
       <div class="fg-section full">
         <div class="fg-section-title">📋 Datos del vehículo</div>
@@ -472,18 +492,22 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
           <div><div class="fl">Modelo</div><input class="fi" id="fm-modelo" placeholder="Hilux"></div>
           <div><div class="fl">Año</div><input class="fi" id="fm-anio" type="number" placeholder="2022"></div>
           <div><div class="fl">KM recorridos</div><input class="fi" id="fm-km" placeholder="45.000"></div>
-          <div><div class="fl">Precio</div><input class="fi" id="fm-precio" placeholder="250000000"><div class="fhint">Sin puntos ni comas. Ej: 52000000</div></div>
+          <div><div class="fl">Precio</div><input class="fi" id="fm-precio" inputmode="numeric" placeholder="250.000.000"><div class="fhint">Solo números. Los puntos se agregan automáticamente.</div></div>
           <div><div class="fl">Condición</div><select class="fi" id="fm-cond"><option>Nuevo</option><option selected>Seminuevo</option><option>Usado</option><option>Importado</option></select></div>
           <div><div class="fl">Fecha de ingreso a stock</div><input class="fi" id="fm-fecha-ingreso" type="date"></div>
-          <div><div class="fl">Comisión de venta</div><input class="fi" id="fm-comision-venta" placeholder="0"><div class="fhint">Dato interno. Sin puntos ni comas.</div></div>
+          <div><div class="fl">Comisión de venta</div><input class="fi" id="fm-comision-venta" inputmode="numeric" placeholder="0"><div class="fhint">Dato interno. Los puntos se agregan automáticamente.</div></div>
         </div>
       </div>
       <div class="fg-section full">
         <div class="fg-section-title">⚙ Características técnicas</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-          <div><div class="fl">Tracción</div><select class="fi" id="fm-trac"><option value="">—</option><option>4x2</option><option>4x4</option></select></div>
           <div><div class="fl">Transmisión</div><select class="fi" id="fm-trans"><option value="">—</option><option>Mecánico</option><option>Automático</option></select></div>
           <div><div class="fl">Origen</div><select class="fi" id="fm-origen"><option value="">—</option><option>Representante</option><option>Importado</option></select></div>
+          <div><div class="fl">Combustible</div><input class="fi" id="fm-combustible" placeholder="Nafta"></div>
+          <div><div class="fl">Color</div><input class="fi" id="fm-color" placeholder="Azul noche"></div>
+          <div><div class="fl">Motor</div><input class="fi" id="fm-motor" placeholder="1.4 CC"></div>
+          <div><div class="fl">Referencia / Ficha</div><input class="fi" id="fm-referencia-ficha" placeholder="Ficha en Garden"></div>
+          <div><div class="fl">Financiación</div><input class="fi" id="fm-financiacion" placeholder="Financiación vía Carden"></div>
         </div>
         <div style="margin-top:10px"><div class="fl">Descripción / Equipamiento</div><textarea class="fi" id="fm-desc" rows="2" placeholder="A/C, cuero, cámara, full equipo..."></textarea></div>
       </div>
@@ -492,7 +516,6 @@ button,input,select,textarea{font-family:'Barlow',sans-serif;}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div><div class="fl">Estado</div><select class="fi" id="fm-estado"><option value="disponible">Disponible</option><option value="senado">Señado</option></select></div>
           <div><div class="fl">⭐ Destacar</div><select class="fi" id="fm-destacado"><option value="">No destacar</option><option value="⚡ Mejor precio">⚡ Mejor precio</option><option value="🏆 Alta gama">🏆 Alta gama</option><option value="🔥 Poco km">🔥 Poco km</option><option value="✨ Como nuevo">✨ Como nuevo</option><option value="🎯 Oportunidad">🎯 Oportunidad</option></select></div>
-          <div><div class="fl">Sucursal</div><select class="fi" id="fm-sucursal"><option value="central">Central</option><option value="sucursal">Sucursal</option></select></div>
         </div>
       </div>
       <div class="fg-section full">
@@ -611,6 +634,13 @@ const entregasEliminandose=new Set();
 const cleanupsReintentando=new Set();
 let cleanupsPendientesVista=new Map();
 let guardandoAuto=false,guardandoEntrega=false;
+const CAMPOS_INGRESO_ASISTIDO={
+  marca:{campoDestino:'fm-marca',etiqueta:'Marca'},modelo:{campoDestino:'fm-modelo',etiqueta:'Modelo'},combustible:{campoDestino:'fm-combustible',etiqueta:'Combustible'},
+  anio:{campoDestino:'fm-anio',etiqueta:'Año'},km:{campoDestino:'fm-km',etiqueta:'Kilometraje'},trans:{campoDestino:'fm-trans',etiqueta:'Transmisión'},
+  color:{campoDestino:'fm-color',etiqueta:'Color'},motor:{campoDestino:'fm-motor',etiqueta:'Motor'},referenciaFicha:{campoDestino:'fm-referencia-ficha',etiqueta:'Referencia / Ficha'},
+  financiacion:{campoDestino:'fm-financiacion',etiqueta:'Financiación'},precio:{campoDestino:'fm-precio',etiqueta:'Precio'},comisionVenta:{campoDestino:'fm-comision-venta',etiqueta:'Comisión'}
+};
+let propuestasIngresoAsistido=[],noReconocidosIngresoAsistido=[],estadoCamposIngresoAsistido=new Map(),aplicandoIngresoAsistido=false;
 
 async function cargar(){
   try{const s=await getDoc(DOC);if(s.exists()){const d=s.data();autos=d.autos||[];entregas=d.entregas||[];}cargaOk=true;}catch(e){console.error(e);alert('No se pudo cargar el catálogo. Los guardados quedan bloqueados para proteger los datos. Revisá tu conexión e intentá recargar la página.');}
@@ -677,12 +707,18 @@ function formatPrecio(v){
   if(isNaN(n))return v;
   return'₲ '+n.toLocaleString('es-PY');
 }
+function digitosImporteFormulario(valor){
+  const texto=String(valor??'').trim();if(!texto)return'';if(!/^(?:\d+|\d{1,3}(?:\.\d{3})+)$/.test(texto))return null;return texto.replace(/\D/g,'');
+}
+function formatearImporteFormulario(valor){
+  const digitos=String(valor??'').replace(/\D/g,'');return digitos.replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+}
+function actualizarFormatoImporte(input){input.value=formatearImporteFormulario(input.value);}
 function parseFotos(a){return(a.fotos||'').split('\n').map(l=>l.trim()).filter(l=>l.startsWith('http'));}
-function getSucursal(a){return a?.sucursal==='sucursal'?'sucursal':'central';}
 function fechaHoy(){const d=new Date();return[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');}
 function crearRegistroFinanciero(a,fechaIngreso,comisionVenta=0,usarFechaActual=false){
   return{
-    autoId:a.id,estadoFinanciero:a.estado==='vendido'?'vendido':'en_stock',sucursal:getSucursal(a),origenStock:'playa4h',fechaIngreso:fechaIngreso||(usarFechaActual?fechaHoy():null),
+    autoId:a.id,estadoFinanciero:a.estado==='vendido'?'vendido':'en_stock',origenStock:'playa4h',fechaIngreso:fechaIngreso||(usarFechaActual?fechaHoy():null),
     vehiculo:{marca:a.marca,modelo:a.modelo,anio:a.anio,combustible:a.combustible||''},
     compra:{fechaCompra:null,precioCompra:0,origenCompra:'',proveedor:'',responsableCompra:'',observacionCompra:''},
     comisiones:{comisionCompra:0,comisionVenta,responsableComision:'',observacionComision:''},
@@ -710,7 +746,7 @@ async function guardarEdicionConFinanzas(a,fechaIngreso,comisionVenta){
     const finanzas=await getDoc(finanzasRef);
     const batch=writeBatch(db);
     batch.set(DOC,{autos,entregas});
-    if(finanzas.exists())batch.update(finanzasRef,{fechaIngreso:fechaIngreso||null,sucursal:getSucursal(a),'comisiones.comisionVenta':comisionVenta,'venta.precioPublicado':Number(a.precio)||0,'vehiculo.marca':a.marca,'vehiculo.modelo':a.modelo,'vehiculo.anio':a.anio,'vehiculo.combustible':a.combustible||'','auditoria.actualizadoEn':serverTimestamp(),'auditoria.actualizadoPor':currentUser.uid});
+    if(finanzas.exists())batch.update(finanzasRef,{fechaIngreso:fechaIngreso||null,'comisiones.comisionVenta':comisionVenta,'venta.precioPublicado':Number(a.precio)||0,'vehiculo.marca':a.marca,'vehiculo.modelo':a.modelo,'vehiculo.anio':a.anio,'vehiculo.combustible':a.combustible||'','auditoria.actualizadoEn':serverTimestamp(),'auditoria.actualizadoPor':currentUser.uid});
     else batch.set(finanzasRef,crearRegistroFinanciero(a,fechaIngreso,comisionVenta));
     await batch.commit();
     return true;
@@ -734,7 +770,7 @@ async function guardarEstadoFinanciero(a){
 function cardHTML(a){
   const pts=(a.validacion||'').split('\n').filter(l=>l.trim());
   const prev=pts.slice(0,2),mas=pts.length>2;
-  const specs=[];if(a.trac)specs.push(a.trac);if(a.trans)specs.push(a.trans);if(a.origen)specs.push(a.origen);
+  const specs=[];if(a.trans)specs.push(a.trans);if(a.origen)specs.push(a.origen);
   const fotos=parseFotos(a);
   const senado=a.estado==='senado';
   const imgH=a.foto
@@ -788,7 +824,6 @@ function filtrar(){
   const marca=(document.getElementById('f-marca').value||'').toLowerCase();
   const modelo=(document.getElementById('f-modelo').value||'').toLowerCase();
   const cond=document.getElementById('f-cond').value;
-  const trac=document.getElementById('f-trac').value;
   const trans=document.getElementById('f-trans').value;
   const pmaxRaw=(document.getElementById('f-pmax').value||'').replace(/\D/g,'');
   const pmax=pmaxRaw?parseInt(pmaxRaw):null;
@@ -797,7 +832,6 @@ function filtrar(){
     if(marca&&!(a.marca||'').toLowerCase().includes(marca))return false;
     if(modelo&&!(a.modelo||'').toLowerCase().includes(modelo))return false;
     if(cond&&a.condicion!==cond)return false;
-    if(trac&&a.trac!==trac)return false;
     if(trans&&a.trans!==trans)return false;
     if(pmax){const p=parseInt((a.precio||'').replace(/\D/g,''));if(p&&p>pmax)return false;}
     return true;
@@ -810,7 +844,7 @@ function filtrar(){
 
 function limpiarFil(){
   ['f-marca','f-modelo','f-pmax'].forEach(id=>document.getElementById(id).value='');
-  ['f-cond','f-trac','f-trans'].forEach(id=>document.getElementById(id).value='');
+  ['f-cond','f-trans'].forEach(id=>document.getElementById(id).value='');
   filtrar();
 }
 
@@ -955,10 +989,10 @@ function agregarInputCompra(contenedor,etiqueta,id,valor,{type='text',full=false
   wrap.append(label,input);contenedor.appendChild(wrap);
 }
 function enteroNoNegativo(valor,nombre){
-  const texto=valor.trim();
-  if(!texto)return 0;
-  if(!/^\d+$/.test(texto)){alert(`${nombre} debe ingresarse sin puntos ni comas.`);return null;}
-  return Number(texto);
+  const digitos=digitosImporteFormulario(valor);
+  if(digitos==='')return 0;
+  if(digitos===null){alert(`${nombre} debe contener solamente números y puntos de agrupación.`);return null;}
+  return Number(digitos);
 }
 function renderCompraFinanciera(contenedor,f){
   const compra=f.compra||{};
@@ -1134,11 +1168,10 @@ function renderFinanzas(){
   if(!puedeVerFinanzas())return;
   const buscar=document.getElementById('ff-buscar').value.trim().toLowerCase();
   const estado=document.getElementById('ff-estado').value;
-  const sucursal=document.getElementById('ff-sucursal').value;
   const lista=finanzas.filter(f=>{
     const vehiculo=f.vehiculo||{};
     const texto=[f.id,vehiculo.marca,vehiculo.modelo,vehiculo.anio].join(' ').toLowerCase();
-    return(!buscar||texto.includes(buscar))&&(!estado||f.estadoFinanciero===estado)&&(!sucursal||f.sucursal===sucursal);
+    return(!buscar||texto.includes(buscar))&&(!estado||f.estadoFinanciero===estado);
   });
   const g=document.getElementById('g-finanzas');g.textContent='';
   const e=document.getElementById('e-finanzas');e.style.display=lista.length?'none':'block';e.textContent='Sin registros financieros disponibles';
@@ -1148,13 +1181,13 @@ function renderFinanzas(){
     const row=document.createElement('div');row.className='fin-row';
     const info=document.createElement('div');
     const nombre=document.createElement('div');nombre.className='fin-name';nombre.textContent=[vehiculo.marca,vehiculo.modelo,vehiculo.anio].filter(Boolean).join(' ')||f.id;
-    const meta=document.createElement('div');meta.className='fin-meta';meta.textContent=`ID: ${f.id} · Sucursal: ${valorFinanciero(f.sucursal)} · Ingreso: ${valorFinanciero(f.fechaIngreso)}`;
+    const meta=document.createElement('div');meta.className='fin-meta';meta.textContent=`ID: ${f.id} · Ingreso: ${valorFinanciero(f.fechaIngreso)}`;
     const badge=document.createElement('div');badge.className='fin-badge'+(f.estadoFinanciero==='vendido'?' vendido':'');badge.textContent=valorFinanciero(f.estadoFinanciero);
     info.append(nombre,meta);row.append(info,badge);card.appendChild(row);g.appendChild(card);
   });
 }
 function limpiarFiltrosFinanzas(){
-  ['ff-buscar','ff-estado','ff-sucursal'].forEach(id=>document.getElementById(id).value='');
+  ['ff-buscar','ff-estado'].forEach(id=>document.getElementById(id).value='');
   renderFinanzas();
 }
 async function verFinanzas(id){
@@ -1162,7 +1195,7 @@ async function verFinanzas(id){
   const f=finanzas.find(item=>item.id===id);if(!f)return;
   const c=document.getElementById('finanzas-c');c.textContent='';
   agregarBloqueFinanciero(c,'General',[
-    ['Auto ID',f.autoId||f.id],['Estado financiero',f.estadoFinanciero],['Sucursal',f.sucursal],['Origen stock',f.origenStock],['Fecha de ingreso',f.fechaIngreso]
+    ['Auto ID',f.autoId||f.id],['Estado financiero',f.estadoFinanciero],['Origen stock',f.origenStock],['Fecha de ingreso',f.fechaIngreso]
   ]);
   agregarBloqueFinanciero(c,'Vehículo',[
     ['Marca',f.vehiculo?.marca],['Modelo',f.vehiculo?.modelo],['Año',f.vehiculo?.anio],['Combustible',f.vehiculo?.combustible]
@@ -1338,6 +1371,131 @@ async function actualizarSesionAdmin(user){
 }
 onAuthStateChanged(auth,actualizarSesionAdmin);
 
+function normalizarEtiquetaIngreso(valor){return valor.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/\s+/g,' ');}
+function normalizarEspaciosIngreso(valor){return valor.trim().replace(/\s+/g,' ');}
+function desagruparEnteroIngreso(valor){
+  const texto=valor.trim();if(/^\d+$/.test(texto))return texto;
+  const agrupado=texto.match(/^\d{1,3}([., ])\d{3}(?:\1\d{3})*$/);return agrupado?texto.replace(/[., ]/g,''):null;
+}
+function normalizarMontoIngreso(valor){
+  const moneda=/(?:gs\.?|₲|guaran[ií]es)/i;
+  const sinMoneda=valor.trim().replace(new RegExp(`^${moneda.source}\\s*`,moneda.flags),'').replace(new RegExp(`\\s*${moneda.source}$`,moneda.flags),'');
+  const digitos=desagruparEnteroIngreso(sinMoneda);return digitos&&Number.isSafeInteger(Number(digitos))?digitos:null;
+}
+function normalizarKilometrajeIngreso(valor){
+  const limpio=valor.replace(/\s*km\s*$/i,'').trim(),digitos=desagruparEnteroIngreso(limpio);if(!digitos||!Number.isSafeInteger(Number(digitos)))return null;
+  return Number(digitos).toLocaleString('es-PY');
+}
+function normalizarAnioIngreso(valor){
+  const limpio=valor.trim();if(!/^\d{4}$/.test(limpio))return null;
+  const anio=Number(limpio),limite=new Date().getFullYear()+1;return anio>=1900&&anio<=limite?limpio:null;
+}
+function normalizarTransmisionIngreso(valor,{etiquetada=true}={}){
+  const limpio=normalizarEtiquetaIngreso(valor);
+  if(['automatica','automatico'].includes(limpio))return'Automático';
+  if(['mecanica','mecanico'].includes(limpio))return'Mecánico';
+  if(etiquetada&&limpio==='at')return'Automático';if(etiquetada&&limpio==='mt')return'Mecánico';return null;
+}
+function capitalizarReferenciaIngreso(valor){
+  const palabras=normalizarEspaciosIngreso(valor).toLowerCase().split(' '),menores=new Set(['en','de','del','la','el','y']);
+  return palabras.map((p,i)=>i>0&&menores.has(p)?p:p.charAt(0).toUpperCase()+p.slice(1)).join(' ');
+}
+function normalizarFinanciacionIngreso(valor){
+  const limpio=normalizarEspaciosIngreso(valor).replace(/^(?:v[ií]a|con|por)\s+/i,'');return limpio?capitalizarReferenciaIngreso(limpio):null;
+}
+function crearPropuestaIngreso(propiedadDestino,valorOriginal,valorPropuesto,evidencia,{confianza='alta',normalizaciones=[]}={}){
+  const campo=CAMPOS_INGRESO_ASISTIDO[propiedadDestino];
+  return{campoDestino:campo.campoDestino,propiedadDestino,valorOriginal,valorPropuesto,evidencia,estado:'detectado',confianza,normalizaciones,aplicable:true,motivo:null};
+}
+function propuestaDesdeEtiquetaIngreso(etiqueta,valor,evidencia){
+  const clave=normalizarEtiquetaIngreso(etiqueta),original=normalizarEspaciosIngreso(valor),texto=normalizarEspaciosIngreso(valor);if(!texto)return[];
+  const simple=(propiedad,normalizaciones=['trim','espacios'])=>[crearPropuestaIngreso(propiedad,original,texto,evidencia,{normalizaciones})];
+  if(clave==='marca')return simple('marca');if(clave==='modelo')return simple('modelo');
+  if(['marca/modelo','marca / modelo'].includes(clave)){
+    const partes=texto.split(' ');if(partes.length<2)return[];const marca=partes.shift(),modelo=partes.join(' ');
+    return[crearPropuestaIngreso('marca',original,marca,evidencia,{confianza:'media',normalizaciones:['separación por primera palabra']}),crearPropuestaIngreso('modelo',original,modelo,evidencia,{confianza:'media',normalizaciones:['separación por primera palabra']})];
+  }
+  if(clave==='combustible')return simple('combustible');if(clave==='color')return simple('color');if(['motor','cilindrada'].includes(clave))return simple('motor');
+  if(['ano','año'].map(normalizarEtiquetaIngreso).includes(clave)){const normalizado=normalizarAnioIngreso(texto);return normalizado?[crearPropuestaIngreso('anio',original,normalizado,evidencia,{normalizaciones:['año válido']})]:[];}
+  if(['kilometraje','kilometros','km'].includes(clave)){const normalizado=normalizarKilometrajeIngreso(texto);return normalizado?[crearPropuestaIngreso('km',original,normalizado,evidencia,{normalizaciones:['separadores de miles']})]:[];}
+  if(['transmision','caja'].includes(clave)){const normalizado=normalizarTransmisionIngreso(texto);return normalizado?[crearPropuestaIngreso('trans',original,normalizado,evidencia,{normalizaciones:['valor cerrado de transmisión']})]:[];}
+  if(['referencia','ficha','referencia/ficha','referencia / ficha'].includes(clave)){const normalizado=capitalizarReferenciaIngreso(texto);return normalizado?[crearPropuestaIngreso('referenciaFicha',original,normalizado,evidencia,{normalizaciones:['presentación']})]:[];}
+  if(['financiacion'].includes(clave)){const normalizado=normalizarFinanciacionIngreso(texto);return normalizado?[crearPropuestaIngreso('financiacion',original,normalizado,evidencia,{normalizaciones:['conector inicial']})]:[];}
+  if(['precio','precio publicado','precio de venta'].includes(clave)){const normalizado=normalizarMontoIngreso(texto);return normalizado?[crearPropuestaIngreso('precio',original,normalizado,evidencia,{normalizaciones:['monto en guaraníes']})]:[];}
+  if(['comision','comision de venta'].includes(clave)){const normalizado=normalizarMontoIngreso(texto);return normalizado?[crearPropuestaIngreso('comisionVenta',original,normalizado,evidencia,{normalizaciones:['monto en guaraníes']})]:[];}
+  return[];
+}
+function consolidarPropuestasIngreso(propuestas){
+  const grupos=new Map();propuestas.forEach(p=>{if(!grupos.has(p.propiedadDestino))grupos.set(p.propiedadDestino,[]);grupos.get(p.propiedadDestino).push(p);});
+  const resultado=[];grupos.forEach(grupo=>{
+    const unicos=[...new Set(grupo.map(p=>p.valorPropuesto))];
+    if(unicos.length===1)resultado.push(grupo[0]);
+    else grupo.forEach(p=>resultado.push({...p,estado:'conflicto',confianza:'baja',aplicable:false,motivo:'Se detectaron valores diferentes para el mismo campo.'}));
+  });return resultado;
+}
+function analizarTextoIngresoAsistido(texto){
+  const propuestas=[],noReconocidos=[];
+  texto.replace(/\r\n?/g,'\n').split('\n').forEach((original,indice)=>{
+    let linea=normalizarEspaciosIngreso(original);if(!linea)return;const evidencia={linea:indice+1,texto:original};
+    const parentesis=[];linea=linea.replace(/\(([^()]*)\)/g,(_,contenido)=>{parentesis.push(normalizarEspaciosIngreso(contenido));return' ';});linea=normalizarEspaciosIngreso(linea);
+    parentesis.forEach(contenido=>{const clave=normalizarEtiquetaIngreso(contenido);if(/\b(ficha|referencia)\b/.test(clave))propuestas.push(crearPropuestaIngreso('referenciaFicha',contenido,capitalizarReferenciaIngreso(contenido),evidencia,{normalizaciones:['parentético explícito','presentación']}));else noReconocidos.push(contenido);});
+    let detectadas=[];const dosPuntos=linea.indexOf(':');
+    if(dosPuntos>=0)detectadas=propuestaDesdeEtiquetaIngreso(linea.slice(0,dosPuntos),linea.slice(dosPuntos+1),evidencia);
+    else{
+      let match=linea.match(/^comisi[oó]n(?:\s+de\s+venta)?\s+(.+)$/i);
+      if(match){const monto=normalizarMontoIngreso(match[1]);if(monto)detectadas=[crearPropuestaIngreso('comisionVenta',match[1],monto,evidencia,{normalizaciones:['monto en guaraníes']})];}
+      if(!detectadas.length&&(match=linea.match(/^financiaci[oó]n\s+(?:(?:v[ií]a|con|por)\s+)?(.+)$/i))){const valor=normalizarFinanciacionIngreso(match[1]);if(valor)detectadas=[crearPropuestaIngreso('financiacion',linea,valor,evidencia,{normalizaciones:['frase de financiación']})];}
+      if(!detectadas.length&&/^(?:ficha|referencia)\s+/i.test(linea))detectadas=[crearPropuestaIngreso('referenciaFicha',linea,capitalizarReferenciaIngreso(linea),evidencia,{normalizaciones:['frase de ficha','presentación']})];
+    }
+    if(detectadas.length)propuestas.push(...detectadas);else if(linea)noReconocidos.push(linea);
+  });
+  return{propuestas:consolidarPropuestasIngreso(propuestas),noReconocidos};
+}
+function valorVisualPropuestaIngreso(propuesta){return['precio','comisionVenta'].includes(propuesta.propiedadDestino)?formatearImporteFormulario(propuesta.valorPropuesto):propuesta.valorPropuesto;}
+function campoIngresoProtegido(propuesta){
+  const input=document.getElementById(propuesta.campoDestino),estado=estadoCamposIngresoAsistido.get(propuesta.campoDestino);if(!input||!estado)return true;
+  if(input.value===valorVisualPropuestaIngreso(propuesta))return false;
+  return estado.modificadoPorUsuario||estado.aplicadoPorAsistente||input.value!==estado.valorInicial;
+}
+function aplicarPropuestaIngreso(indice,{forzar=false}={}){
+  const propuesta=propuestasIngresoAsistido[indice],input=propuesta&&document.getElementById(propuesta.campoDestino);if(!propuesta||!input)return false;
+  if(!forzar&&(!propuesta.aplicable||campoIngresoProtegido(propuesta)))return false;
+  aplicandoIngresoAsistido=true;input.value=valorVisualPropuestaIngreso(propuesta);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));aplicandoIngresoAsistido=false;
+  const estado=estadoCamposIngresoAsistido.get(propuesta.campoDestino);if(estado){estado.aplicadoPorAsistente=true;estado.modificadoPorUsuario=false;}
+  propuesta.estado='aplicado';renderPropuestasIngresoAsistido();return true;
+}
+function renderPropuestasIngresoAsistido(){
+  const contenedor=document.getElementById('fm-ingreso-asistido-propuestas'),boton=document.getElementById('fm-ingreso-asistido-aplicar');contenedor.textContent='';let aplicables=0,aplicadas=0;
+  propuestasIngresoAsistido.forEach((propuesta,indice)=>{
+    const protegida=campoIngresoProtegido(propuesta),conflicto=propuesta.estado==='conflicto',aplicada=propuesta.estado==='aplicado'&&document.getElementById(propuesta.campoDestino)?.value===valorVisualPropuestaIngreso(propuesta);
+    if(aplicada)aplicadas++;
+    if(propuesta.aplicable&&!protegida&&!aplicada)aplicables++;
+    if(aplicada||(!conflicto&&!protegida))return;
+    const fila=document.createElement('div');fila.className='ingreso-propuesta';const info=document.createElement('div');info.className='ingreso-propuesta-info';
+    const principal=document.createElement('div'),icono=document.createElement('span');icono.className='ingreso-propuesta-alerta';icono.textContent='⚠';
+    const campo=CAMPOS_INGRESO_ASISTIDO[propuesta.propiedadDestino];principal.append(icono,document.createTextNode(`${propuesta.valorPropuesto} → ${campo.etiqueta}`));info.appendChild(principal);
+    const meta=document.createElement('div');meta.className='ingreso-propuesta-meta';
+    if(conflicto)meta.textContent='Conflicto: hay valores diferentes para este campo.';
+    else meta.textContent=`Actual: ${document.getElementById(propuesta.campoDestino)?.value||'—'} · Requiere reemplazo explícito.`;
+    info.appendChild(meta);fila.appendChild(info);
+    if((conflicto||protegida)&&!aplicada){const reemplazar=document.createElement('button');reemplazar.type='button';reemplazar.textContent=conflicto?'Aplicar este valor':'Reemplazar';reemplazar.addEventListener('click',()=>aplicarPropuestaIngreso(indice,{forzar:true}));fila.appendChild(reemplazar);}
+    contenedor.appendChild(fila);
+  });
+  if(aplicadas||aplicables){const resumen=document.createElement('div');resumen.className='ingreso-resumen';resumen.textContent=aplicadas?`✓ ${aplicadas} datos aplicados. Revisá el formulario antes de guardar.`:`✓ ${aplicables} datos listos para aplicar.`;contenedor.prepend(resumen);}
+  if(noReconocidosIngresoAsistido.length){const bloque=document.createElement('div');bloque.className='ingreso-no-reconocidos';const titulo=document.createElement('strong');titulo.textContent='Datos no reconocidos';bloque.appendChild(titulo);noReconocidosIngresoAsistido.forEach(texto=>{const linea=document.createElement('div');linea.textContent=`• ${texto}`;bloque.appendChild(linea);});contenedor.appendChild(bloque);}
+  if(!propuestasIngresoAsistido.length&&!noReconocidosIngresoAsistido.length){const vacio=document.createElement('div');vacio.className='ingreso-no-reconocidos';vacio.textContent='No se detectaron datos para proponer.';contenedor.appendChild(vacio);}
+  boton.hidden=aplicables===0;boton.disabled=aplicables===0;
+}
+function analizarIngresoAsistido(){
+  const texto=document.getElementById('fm-ingreso-asistido-texto').value,{propuestas,noReconocidos}=analizarTextoIngresoAsistido(texto);propuestasIngresoAsistido=propuestas;noReconocidosIngresoAsistido=noReconocidos;renderPropuestasIngresoAsistido();
+}
+function aplicarDatosIngresoAsistido(){propuestasIngresoAsistido.forEach((_,indice)=>aplicarPropuestaIngreso(indice));renderPropuestasIngresoAsistido();}
+function reiniciarIngresoAsistido(esAlta){
+  const bloque=document.getElementById('fm-ingreso-asistido');bloque.hidden=!esAlta;propuestasIngresoAsistido=[];noReconocidosIngresoAsistido=[];document.getElementById('fm-ingreso-asistido-texto').value='';document.getElementById('fm-ingreso-asistido-propuestas').textContent='';
+  const boton=document.getElementById('fm-ingreso-asistido-aplicar');boton.hidden=true;boton.disabled=true;estadoCamposIngresoAsistido=new Map();
+  Object.values(CAMPOS_INGRESO_ASISTIDO).forEach(({campoDestino})=>{const input=document.getElementById(campoDestino);estadoCamposIngresoAsistido.set(campoDestino,{valorInicial:input?.value||'',modificadoPorUsuario:false,aplicadoPorAsistente:false});});
+}
+
 async function abrirForm(id){
   if(!requireSuperAdmin())return;
   limpiarFotosLocales();
@@ -1345,28 +1503,33 @@ async function abrirForm(id){
   const a=id?autos.find(x=>x.id===id):null;
   let fechaIngreso=a?.fechaIngreso||'';
   let comisionVenta=0;
-  if(a)try{const finanzas=await getDoc(doc(db,'finanzasVehiculos',a.id));if(finanzas.exists()){const datos=finanzas.data();fechaIngreso=datos.fechaIngreso||fechaIngreso;comisionVenta=Number(datos.comisiones?.comisionVenta)||0;}}catch(e){console.error(e);}
+  let combustible=a?.combustible||'';
+  if(a)try{const finanzas=await getDoc(doc(db,'finanzasVehiculos',a.id));if(finanzas.exists()){const datos=finanzas.data();fechaIngreso=datos.fechaIngreso||fechaIngreso;comisionVenta=Number(datos.comisiones?.comisionVenta)||0;if(!combustible)combustible=datos.vehiculo?.combustible||'';}}catch(e){console.error(e);}
   editId=a?a.id:null;
   document.getElementById('fm-title').textContent=a?'EDITAR VEHÍCULO':'AGREGAR VEHÍCULO';
   document.getElementById('fm-marca').value=a?.marca||'';
   document.getElementById('fm-modelo').value=a?.modelo||'';
   document.getElementById('fm-anio').value=a?.anio||'';
   document.getElementById('fm-km').value=a?.km||'';
-  document.getElementById('fm-precio').value=a?.precio||'';
+  document.getElementById('fm-precio').value=formatearImporteFormulario(a?.precio||'');
   document.getElementById('fm-fecha-ingreso').value=a?fechaIngreso:fechaHoy();
-  document.getElementById('fm-comision-venta').value=a?comisionVenta:'';
+  document.getElementById('fm-comision-venta').value=a?formatearImporteFormulario(comisionVenta):'';
   document.getElementById('fm-cond').value=a?.condicion||'Seminuevo';
   document.getElementById('fm-estado').value=a?.estado==='vendido'?'disponible':(a?.estado||'disponible');
   document.getElementById('fm-destacado').value=a?.destacado||'';
-  document.getElementById('fm-sucursal').value=a?getSucursal(a):'central';
-  document.getElementById('fm-trac').value=a?.trac||'';
   document.getElementById('fm-trans').value=a?.trans||'';
   document.getElementById('fm-origen').value=a?.origen||'';
+  document.getElementById('fm-combustible').value=combustible;
+  document.getElementById('fm-color').value=a?.color||'';
+  document.getElementById('fm-motor').value=a?.motor||'';
+  document.getElementById('fm-referencia-ficha').value=a?.referenciaFicha||'';
+  document.getElementById('fm-financiacion').value=a?.financiacion||'';
   document.getElementById('fm-desc').value=a?.desc||'';
   document.getElementById('fm-val').value=a?.validacion||'';
   document.getElementById('fm-foto').value=a?.foto||'';
   document.getElementById('fm-fotos').value=a?.fotos||'';
   prepararImagenesEdicion(a);
+  reiniciarIngresoAsistido(!a);
   document.getElementById('ov-form').classList.add('on');
 }
 
@@ -2113,25 +2276,31 @@ async function guardarAuto(){
   const autoActual=editId?autos.find(x=>x.id===editId):null;
   const vantaActual=autoActual?.venta||null;
   const fechaIngreso=document.getElementById('fm-fecha-ingreso').value;
+  const precio=digitosImporteFormulario(document.getElementById('fm-precio').value);if(precio===null){showToast('⚠ El precio debe contener solamente números');return;}
   const comisionVenta=enteroNoNegativo(document.getElementById('fm-comision-venta').value,'La comisión de venta');if(comisionVenta===null)return;
   const usarEdicionAdministrada=!!editId&&modoFotosEdicion==='administrado';
   const data=protegerFotosEdicion({
     id:editId||Date.now().toString(),marca,modelo,
     anio:document.getElementById('fm-anio').value.trim(),
     km:document.getElementById('fm-km').value.trim(),
-    precio:document.getElementById('fm-precio').value.trim(),
+    precio,
     condicion:document.getElementById('fm-cond').value,
     estado:autoActual?.estado==='vendido'?'vendido':document.getElementById('fm-estado').value,
     destacado:document.getElementById('fm-destacado').value,
-    sucursal:getSucursal({sucursal:document.getElementById('fm-sucursal').value}),
-    trac:document.getElementById('fm-trac').value,
     trans:document.getElementById('fm-trans').value,
     origen:document.getElementById('fm-origen').value,
+    combustible:document.getElementById('fm-combustible').value.trim(),
+    color:document.getElementById('fm-color').value.trim(),
+    motor:document.getElementById('fm-motor').value.trim(),
+    referenciaFicha:document.getElementById('fm-referencia-ficha').value.trim(),
+    financiacion:document.getElementById('fm-financiacion').value.trim(),
     desc:document.getElementById('fm-desc').value.trim(),
     validacion:document.getElementById('fm-val').value.trim(),
     foto:document.getElementById('fm-foto').value.trim(),
     fotos:document.getElementById('fm-fotos').value.trim(),
     venta:vantaActual,
+    ...(autoActual&&Object.prototype.hasOwnProperty.call(autoActual,'sucursal')?{sucursal:autoActual.sucursal}:{}),
+    ...(autoActual&&Object.prototype.hasOwnProperty.call(autoActual,'trac')?{trac:autoActual.trac}:{}),
   },autoActual,usarEdicionAdministrada);
   if(editId){
     if(usarEdicionAdministrada){
@@ -2191,7 +2360,6 @@ function verFicha(id,desdeDeepLink=false){
   const fotos=parseFotos(a);
   galeriaFotos=a.foto?[a.foto,...fotos]:fotos;fotoActiva=0;
   const specs=[];
-  if(a.trac)specs.push({l:'Tracción',v:a.trac});
   if(a.trans)specs.push({l:'Transmisión',v:a.trans});
   if(a.origen)specs.push({l:'Origen',v:a.origen});
   const galH=galeriaFotos.length
@@ -2611,6 +2779,12 @@ function showToast(msg){const t=document.getElementById('toast');t.textContent=m
 
 document.querySelectorAll('.ov,.foto-full-ov').forEach(ov=>ov.addEventListener('click',e=>{if(e.target===ov)cerrar(ov.id);}));
 document.getElementById('foto-entrega-input').addEventListener('change',seleccionarFotoEntregaLocal);
+document.getElementById('fm-ingreso-asistido-analizar').addEventListener('click',analizarIngresoAsistido);
+document.getElementById('fm-ingreso-asistido-aplicar').addEventListener('click',aplicarDatosIngresoAsistido);
+['fm-precio','fm-comision-venta'].forEach(id=>document.getElementById(id).addEventListener('input',event=>actualizarFormatoImporte(event.currentTarget)));
+Object.values(CAMPOS_INGRESO_ASISTIDO).forEach(({campoDestino})=>{
+  const input=document.getElementById(campoDestino);['input','change'].forEach(tipo=>input.addEventListener(tipo,()=>{if(aplicandoIngresoAsistido)return;const estado=estadoCamposIngresoAsistido.get(campoDestino);if(estado){estado.modificadoPorUsuario=true;estado.aplicadoPorAsistente=false;if(propuestasIngresoAsistido.length)renderPropuestasIngresoAsistido();}}));
+});
 
 window.goSec=goSec;window.abrirLogin=abrirLogin;window.doLogin=doLogin;window.salirAdmin=salirAdmin;
 window.abrirForm=abrirForm;window.guardarAuto=guardarAuto;window.eliminarAuto=eliminarAuto;
