@@ -2260,8 +2260,16 @@ document.getElementById('imagenes-edicion-input').addEventListener('change',sele
 
 function protegerFotosEdicion(data,original,usarEdicionAdministrada=false){
   if(usarEdicionAdministrada)return data;
-  if(!original||!Array.isArray(original.imagenes)||original.imagenes.length===0)return data;
-  return {...data,foto:original.foto,fotos:original.fotos,imagenes:original.imagenes.map(imagen=>({...imagen}))};
+  if(!original)return data;
+  const protegido={...data};
+  ['foto','fotos','imagenes','imagenesRetiradas'].forEach(propiedad=>{
+    if(!Object.prototype.hasOwnProperty.call(original,propiedad)){delete protegido[propiedad];return;}
+    const valor=original[propiedad];
+    protegido[propiedad]=propiedad==='imagenes'
+      ?Array.isArray(valor)?valor.map(clonarImagenEdicion):valor&&typeof valor==='object'?{...valor}:valor
+      :valor;
+  });
+  return protegido;
 }
 function mensajeFalloEdicionFotos(resultado){
   const detalle=`\nCódigo: ${codigoDiagnosticoFotos({code:resultado?.error})}`;
